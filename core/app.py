@@ -783,7 +783,11 @@ async def genome_skill(skill: str):
 
 @app.get("/")
 async def index():
-    return FileResponse(str(UI_DIR / "index.html")) if (UI_DIR / "index.html").exists() else {"status": "ok"}
+    if (UI_DIR / "index.html").exists():
+        resp = FileResponse(str(UI_DIR / "index.html"))
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
+    return {"status": "ok"}
 
 
 @app.get("/api/health")
