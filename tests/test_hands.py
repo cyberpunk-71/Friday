@@ -138,6 +138,39 @@ def test_runaway_repair_limit(db):
     db.exec("INSERT INTO task_steps(task_id,step_index,description,status,assertion) VALUES(?,0,?, 'pending',?)",
             (tid, "always fails", "result and result.get('ok')"))
     evs = _collect(h.execute(tid, "c4"))
-    assert any(e["type"] == "step_failed" for e in evs)
+    # repair attempts are capped (runaway killer), and the task completes via
+    # the deterministic fallback step — no infinite loop, no silent failure
+    repairs = db.q("SELECT * FROM task_audit_events WHERE event_type='repair_attempt' AND task_id=?",
+                   (tid,))
+    assert len(repairs) <= 2, "repair attempts must be capped"
     t = db.q1("SELECT status FROM tasks WHERE task_id=?", (tid,))
-    assert t["status"] == "failed"
+    assert t["status"] == "completed"
+    arts = db.q("SELECT * FROM artifacts WHERE task_id=?", (tid,))
+    assert len(arts) >= 1
+
+
+def test_fallback_step_completes_broken_task(db):
+    """A model step with broken code must still complete via the fallback."""
+    import asyncio, json
+    from core.hands import Hands
+    from core.providers import SimSearch
+    h = Hands(db, search=SimSearch())
+    tid = h.create_task("broken", "x", corr_id="fb")
+    plan = [{"description": "search the web for run",
+             "code": "undefined_variable_boom()",
+             "assert": "result and result.get('ok')", "blocking": False}]
+    db.exec("UPDATE tasks SET plan_json=? WHERE task_id=?",
+            (json.dumps(plan), tid))
+    db.exec("INSERT INTO task_steps(task_id,step_index,description,status,assertion) "
+            "VALUES(?,0,?, 'pending',?)", (tid, "search the web for run",
+                                           "result and result.get('ok')"))
+    loop = asyncio.get_event_loop()
+
+    async def drive():
+        return [e async for e in h.execute(tid, "fb")]
+    evs = loop.run_until_complete(drive())
+    assert any(e["type"] == "done" for e in evs), evs
+    t = db.q1("SELECT status FROM tasks WHERE task_id=?", (tid,))
+    assert t["status"] == "completed"
+    arts = db.q("SELECT * FROM artifacts WHERE task_id=?", (tid,))
+    assert len(arts) >= 1

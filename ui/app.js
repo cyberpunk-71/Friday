@@ -234,6 +234,11 @@ function renderCard(card) {
       break;
     }
     case "book_sources": html = `<div class="card"><h3>📚 Sources</h3><div class="card-row">${(card.chunks || []).map(c => `<span class="chip">p${c.page}</span>`).join("")}</div></div>`; break;
+    case "tracker": html = `<div class="card"><h3>📡 Tracker #${card.tracker_id}</h3>
+      <div class="card-row"><span class="chip good">active</span><span class="chip">every ${Math.round(card.frequency_mins / 60)}h</span></div>
+      <p style="margin-top:6px">${esc(card.query)}</p>
+      <button class="mini-btn" onclick="switchView('tasks')">view in Tasks</button></div>`; break;
+    case "note": html = `<div class="card"><h3>💡</h3><p>${esc(card.text || "")}</p></div>`; break;
     case "task_created": html = `<div class="card"><h3>🧩 Task #${card.task_id}</h3><div class="card-row"><span class="chip">${esc(card.status)}</span><button class="mini-btn" onclick="switchView('tasks')">open Tasks</button></div></div>`; break;
     default: html = `<div class="card"><pre>${esc(JSON.stringify(card))}</pre></div>`;
   }
@@ -335,7 +340,20 @@ async function loadTasks() {
     const data = await api("/api/tasks");
     state.tasks = data.tasks;
     renderKanban(data.tasks);
+    renderTrackers(data.trackers || []);
   } catch (e) { toast("tasks: " + esc(e.message)); }
+}
+function renderTrackers(trackers) {
+  const el = document.getElementById("tracker-list");
+  if (!el) return;
+  el.innerHTML = trackers.map(t => `
+    <div class="atom-card"><div class="a-main">
+      <div class="a-text">📡 #${t.tracker_id} — ${esc(t.query)}</div>
+      <div class="a-meta"><span class="kind-pill">${esc(t.kind)}</span>
+        <span>every ${Math.round(t.frequency_mins / 60)}h</span>
+        <span class="chip ${t.status === "active" ? "good" : "bad"}">${esc(t.status)}</span>
+        <span>${fmtDate(t.created_ts)}</span></div>
+    </div></div>`).join("") || `<div class="dim">no trackers yet</div>`;
 }
 const COLUMNS = [["queued", "Queued"], ["running", "Running"], ["waiting_approval", "Approval"], ["completed", "Completed"], ["failed", "Failed"]];
 function renderKanban(tasks) {

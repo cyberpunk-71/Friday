@@ -337,7 +337,8 @@ async def tasks_list(status: Optional[str] = None):
     for r in rows:
         r["steps"] = db.q("SELECT * FROM task_steps WHERE task_id=? ORDER BY step_index", (r["task_id"],))
         r["artifacts"] = db.q("SELECT * FROM artifacts WHERE task_id=? ORDER BY created_ts DESC", (r["task_id"],))
-    return {"tasks": rows}
+    trackers = db.q("SELECT * FROM trackers ORDER BY created_ts DESC LIMIT 20")
+    return {"tasks": rows, "trackers": trackers}
 
 
 @app.post("/api/tasks")

@@ -201,6 +201,12 @@ class Cortex:
             "- \"events\" after \"what events in ahmedabad\" = events in ahmedabad. "
             "\"search on book my show\" = list BookMyShow events, from the "
             "PREFIRE WEB SNIPPET if present.\n"
+            "- \"run\" / \"yes\" / \"ok\" / \"leave it broad\" are acknowledgements — "
+            "DO NOT create tasks or plans for them. Only create a task when the "
+            "user actually asked for research/tracking/sending work.\n"
+            "- NEVER claim you created a calendar event, phone notification, or "
+            "reminder unless the system actually created it (trackers and chat "
+            "reminders are real; calendar is not wired). Say what was really set up.\n"
             "- Lead every reply with the ANSWER or the ACTION, then offer follow-ups "
             "only at the end if genuinely useful.")
 
@@ -342,9 +348,17 @@ class Cortex:
             q = asks[0] if isinstance(asks[0], str) else asks[0].get("q", str(asks[0]))
             await bus.emit(corr_id, {"type": "ask", "question": q})
 
-        # code intent → FORGE DAG, never blocks chat
-        if ctrl.get("code_intent"):
+        # code intent → FORGE DAG, never blocks chat.
+        # One-word replies ("run", "yes", "ok") must NOT spawn nonsense tasks.
+        stripped = re.sub(r"[^a-z0-9 ]", "", text.lower()).strip()
+        if ctrl.get("code_intent") and len(stripped) >= 12:
             self._spawn_task(corr_id, text, book_id)
+        elif ctrl.get("code_intent"):
+            # tiny reply — drop the bogus task (the model over-eagerly plans)
+            ctrl["code_intent"] = False
+            await bus.emit(corr_id, {"type": "card",
+                                     "card": {"type": "note",
+                                              "text": "If you want me to run something, tell me what — e.g. \"search events in ahmedabad\"."}})
 
     def _spawn_task(self, corr_id: str, text: str, book_id: int | None) -> None:
         """Launch a background DAG job; progress streams via SSE bus."""
@@ -403,6 +417,18 @@ class Cortex:
     # deterministic ingress handlers
     # ------------------------------------------------------------------ #
     @staticmethod
+    def _city_from_slots(slots: list[dict]) -> str:
+        """Home city from memory (user lives in Gandhinagar → events near
+        Ahmedabad) — used to make event searches meaningful."""
+        for s in slots:
+            txt = s.get("text", "")
+            for c in ("Gandhinagar", "Ahmedabad", "Mumbai", "Delhi", "Pune",
+                      "Hyderabad", "Bangalore", "Chennai", "Kolkata"):
+                if c in txt:
+                    return c.lower()
+        return "ahmedabad"
+
+    @staticmethod
     def _provider_key(text: str) -> dict | None:
         """'this is my new deep seek api kes sk-9f3c... for research use case'"""
         m = re.search(r"\b(sk-[A-Za-z0-9_\-]{6,})\b", text)
@@ -449,6 +475,43 @@ class Cortex:
                         "action": "stop", "session_id": r["session_id"]}
             return {"message": "No active focus session.", "action": "stop_error"}
         return None
+
+    def _tracker_ingress(self, text: str) -> dict | None:
+        """'set up a daily tracker' / 'keep an eye on X' / 'monitor Y' →
+        creates a REAL tracker row (visible in Tasks) + a card. No model
+        involved — the previous behaviour let the model CLAIM a tracker
+        without creating one."""
+        low = text.lower()
+        if not re.search(r"(set up|create|make|start|add).{0,20}(tracker|monitor)|"
+                         r"keep (an? )?eye on|track (it|this|that)|daily (tracker|check|update)", low):
+            return None
+        # Do NOT hijack multi-part research questions ("...dates? ... keep eye on
+        # portal") — only pure tracker commands short-circuit here.
+        if "?" in text or re.search(r"\b(dates?|clash|register|steps?|how |what |when |"
+                                    r"research|compare|draft|email|price|buy)\b", low):
+            if not re.match(r"^(keep an? eye on|set up|create|make|start|add|track|monitor)\b",
+                            low.strip()):
+                return None
+        # what to watch: "keep an eye on X" / "track X" / default = BMS events
+        m = re.search(r"(?:keep an? eye on|track|monitor)\s+(.{4,60})", low)
+        query = m.group(1).strip() if m else None
+        daily = bool(re.search(r"daily|each morning|every morning", low))
+        city = self._city_from_slots(self.loom.recall(text, k=4)["slots"])
+        if not query:
+            query = f"bookmyshow events in {city}"
+        freq = 1440 if daily else 360
+        tid = self.db.exec(
+            "INSERT INTO trackers(kind,query,status,frequency_mins,created_ts) "
+            "VALUES('content',?, 'active',?,?)",
+            (query[:200], freq, time.time()))
+        self.db.append_event("tool_result", "hermes",
+                             {"tool": "tracker.create", "tracker_id": tid,
+                              "query": query, "frequency_mins": freq}, 1.0)
+        when = "every morning" if daily else f"every {freq // 60} hours"
+        return {"tracker_id": tid, "query": query, "frequency_mins": freq,
+                "message": (f"Tracker #{tid} created — I'll check \"{query}\" {when} "
+                            "and ping you (chrome + chat) when it changes. It's visible "
+                            "in the Tasks panel → Trackers.")}
 
     def _reminder_ingress(self, text: str) -> dict | None:
         low = text.lower()
@@ -592,6 +655,21 @@ class Cortex:
                                     {"slots": [], "now": self.loom.now_block()},
                                     ctrl_out, cfg_cmd["reply"], 2, 0.0, None)
             return
+        # tracker creation — deterministic so "set up a daily tracker" /
+        # "keep an eye on X" really creates a tracker the user can see
+        tracker_event = self._tracker_ingress(text)
+        if tracker_event:
+            yield {"type": "ctrl", "ctrl": {"depth": 0.1, "tooliness": 0.0,
+                                            "emotionality": 0.0, "novelty": 0.2,
+                                            "stakes": 0.0, "config_deltas": {},
+                                            "memory_writes": [], "code_intent": False,
+                                            "ask": []}}
+            yield {"type": "delta", "text": tracker_event["message"]}
+            yield {"type": "card", "card": {"type": "tracker", **tracker_event}}
+            yield {"type": "done", "reply": tracker_event["message"], "latency_ms": 2,
+                   "cost_usd": 0.0, "corr_id": corr_id, "model": "deterministic",
+                   "slots_used": 0}
+            return
         # reminder creation — deterministic so "remind me at 14:00" never misses
         reminder_event = self._reminder_ingress(text)
         if reminder_event:
@@ -605,7 +683,8 @@ class Cortex:
 
         # ---- SENSE ----
         sense = await asyncio.to_thread(self._sense, text, book_id)
-        self.hermes.prefire_state = await self.hermes.prefire(text)
+        city_hint = self._city_from_slots(sense.get("slots", []))
+        self.hermes.prefire_state = await self.hermes.prefire(text, city=city_hint)
         sense["prefire"] = self.hermes.prefire_state
         yield {"type": "sense", "slots": sense["slots"], "confidence": sense["confidence"],
                "sense_ms": sense["sense_ms"], "now": sense["now"],

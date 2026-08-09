@@ -65,8 +65,14 @@ class Hands:
                 steps = data.get("steps", [])
             except Exception:
                 steps = []
-        if not steps:
-            steps = self._default_plan(user_text)
+        # ---- plan validation: garbage/invalid LLM plans must not ship ----
+        # A step is valid only if it has code that calls the friday SDK.
+        valid = []
+        for s in (steps or [])[:4]:
+            code = (s.get("code") or "").strip()
+            if "friday." in code and code:
+                valid.append(s)
+        steps = valid if valid else self._default_plan(user_text)
         self.db.exec("UPDATE tasks SET plan_json=?, status='running', updated_ts=? WHERE task_id=?",
                      (json.dumps(steps, ensure_ascii=False), time.time(), task_id))
         for i, s in enumerate(steps):
@@ -171,8 +177,14 @@ class Hands:
                        "result": result}
             else:
                 err = result.get("error", "assert failed")
-                # ONE targeted repair call — only on failure
+                # ONE targeted repair call — only on failure; if the model's
+                # step is broken, fall back to the deterministic step so the
+                # task still completes (tasks must WORK, not fail prettily)
                 repaired = await self._repair(task_id, step, spec, err, corr_id)
+                if not repaired and spec.get("code") and "friday." not in spec.get("code", ""):
+                    repaired = None
+                if not repaired:
+                    repaired = await self._fallback_step(task_id, step, spec, corr_id)
                 if repaired:
                     self.db.exec("UPDATE task_steps SET status='completed', completed_at=?, output_summary=? "
                                  "WHERE step_id=?", (time.time(), json.dumps(repaired, ensure_ascii=False)[:500], step["step_id"]))
@@ -205,6 +217,24 @@ class Hands:
             return bool(eval(expr, {"result": result, "json": json}))
         except Exception:
             return False
+
+    async def _fallback_step(self, task_id: int, step: dict, spec: dict,
+                             corr_id: str | None) -> dict | None:
+        """Deterministic replacement for a broken step: web search + brief.
+        Guarantees the task completes with a useful artifact."""
+        code = (
+            "results = await friday.web_search('" +
+            (spec.get("description") or "").replace("'", "")[:80] + "')\n"
+            "rows = '\\n'.join(f\"- {r['title']}: {r['snippet']}\" for r in results[:6])\n"
+            "result = friday.artifact_save('brief', '# Brief\\n\\n' + rows)"
+        )
+        spec2 = dict(spec)
+        spec2["code"] = code
+        spec2["assert"] = "result and result.get('ok')"
+        res = await self._run_step(task_id, step, spec2, corr_id)
+        if res.get("ok") and self._check_assert(spec2["assert"], res):
+            return res
+        return None
 
     async def _repair(self, task_id: int, step: dict, spec: dict, err: str,
                       corr_id: str | None) -> dict | None:

@@ -181,3 +181,55 @@ def test_event_prefire_web_read(sim_seed, cortex, db):
         h.prefire("what are events in ahmedabad tomorrow"))
     # in the sandbox web_read fails (no egress) — but the path must not crash
     assert isinstance(pf.web, str)
+
+
+def test_city_hint_from_slots(sim_seed, cortex):
+    slots = [{"text": "User lives in Gandhinagar"}]
+    assert cortex._city_from_slots(slots) == "gandhinagar"
+    assert cortex._city_from_slots([]) == "ahmedabad"
+
+
+def test_tiny_reply_no_task(sim_seed, cortex, db):
+    """'run' / 'yes' must NOT spawn a nonsense task."""
+    from core.cortex import bus
+    import uuid
+    corr = f"cor_{uuid.uuid4().hex[:8]}"
+    events = collect(cortex.turn("run", meta={"corr_id": corr}))
+    tasks = db.q("SELECT * FROM tasks")
+    # 'run' alone is not a config/reminder/tracker command and is < 12 chars,
+    # so no task should exist even if the model set code_intent
+    assert len(tasks) == 0, f"'run' must not create tasks: {tasks}"
+
+
+def test_tracker_ingress_creates_real_tracker(sim_seed, cortex, db):
+    events = collect(cortex.turn("set up a daily tracker for bookmyshow events"))
+    done = next(e for e in events if e["type"] == "done")
+    assert "Tracker #" in done["reply"]
+    trackers = db.q("SELECT * FROM trackers WHERE status='active'")
+    assert len(trackers) == 1
+    assert trackers[0]["frequency_mins"] == 1440  # daily
+    assert any(e["type"] == "card" and e["card"]["type"] == "tracker" for e in events)
+
+
+def test_core_query_appends_city():
+    from core.hermes import Hermes
+    q = Hermes._core_query("suggest me any good shows", "ahmedabad")
+    assert "ahmedabad" in q, q
+    q2 = Hermes._core_query("who is mayor of ahmedbad", "ahmedabad")
+    assert "ahmedabad" in q2 and "ahemedbad" not in q2
+
+
+def test_plan_validation_rejects_garbage(db):
+    from core.hands import Hands
+    import asyncio, json
+    h = Hands(db)
+    tid = h.create_task("t", "x", corr_id="pv")
+    # simulate an LLM returning a garbage plan (no friday. calls)
+    h.llm = None
+    plan = [{"description": "dance", "code": "print('hello')",
+             "assert": "True", "blocking": False}]
+    db.exec("UPDATE tasks SET plan_json=? WHERE task_id=?",
+            (json.dumps(plan), tid))
+    steps = asyncio.get_event_loop().run_until_complete(h.plan_task(tid, "x", {}))
+    plan2 = json.loads(db.q1("SELECT plan_json FROM tasks WHERE task_id=?", (tid,))["plan_json"])
+    assert all("friday." in s.get("code", "") for s in plan2), "garbage plan must be replaced"

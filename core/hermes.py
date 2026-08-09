@@ -59,7 +59,7 @@ class Hermes:
     # ------------------------------------------------------------------ #
     # pre-fire
     # ------------------------------------------------------------------ #
-    async def prefire(self, text: str) -> PreFire:
+    async def prefire(self, text: str, city: str = "ahmedabad") -> PreFire:
         pf = PreFire()
         max_usd = cfg.get("hermes.pre_fire_max_usd", 0.0002)
         if not LIVE_TRIGGERS.search(text):
@@ -71,32 +71,46 @@ class Hermes:
             return pf
         try:
             # strip the user's chatty bits; search the core question
-            q = self._core_query(text)
+            q = self._core_query(text, city)
             pf.search = await self.search.search(q, 5)
             pf.burned_usd = 0.0001
         except Exception:
             pass
+        low = text.lower()
         # events/movies/BookMyShow → also fetch the city's BMS events page so
         # the model has REAL listings, not just news headlines
-        if EVENT_HINTS.search(text.lower()):
-            city = None
-            for c in ("ahmedabad", "gandhinagar", "mumbai", "delhi", "pune",
-                      "hyderabad", "bangalore", "chennai", "kolkata"):
-                if c in text.lower():
-                    city = c
-                    break
-            city = city or "ahmedabad"
+        if EVENT_HINTS.search(low):
             try:
                 from .providers import web_read
                 pf.web = await web_read(f"https://in.bookmyshow.com/{city}/events", 6000)
             except Exception:
                 pass
+            if not pf.web:
+                try:
+                    from .providers import web_read
+                    pf.web = await web_read(f"https://www.bookmyshow.com/{city}/events", 6000)
+                except Exception:
+                    pass
+        # who-is / current-office-holder questions → Wikipedia via jina
+        # (jina is confirmed reachable from the VM), so "mayor of ahmedabad"
+        # gets a REAL answer instead of "search came back empty"
+        if re.search(r"\b(who is|who's|current|mayor|minister|president|cm\b|pm\b|"
+                     r"chief minister|finance minister)\b", low) and re.search(r"\b(who|current)\b", low):
+            q2 = self._core_query(text, city).replace("current ", "").replace("who is ", "").strip()
+            try:
+                from .providers import web_read
+                import urllib.parse
+                slug = urllib.parse.quote(q2.replace(" ", "_"))
+                pf.web = await web_read(f"https://en.wikipedia.org/wiki/{slug}", 4000)
+            except Exception:
+                pass
         return pf
 
     @staticmethod
-    def _core_query(text: str) -> str:
+    def _core_query(text: str, city: str = "ahmedabad") -> str:
         t = re.sub(r"\b(hey|friday|please|pls|can you|could you|i want|i need|keep an eye on|"
-                   r"search (on|for|up)|look (for|up)|tell me|find me|show me)\b",
+                   r"search (on|for|up)|look (for|up)|tell me|find me|show me|suggest me|"
+                   r"who is|who's|what is|what's|current|the)\b",
                    " ", text, flags=re.I)
         # fix city typos/aliases
         low = t.lower()
@@ -104,6 +118,14 @@ class Hermes:
             if bad in low:
                 t = re.sub(rf"\b{bad}\b", good, t, flags=re.I)
         t = re.sub(r"\s+", " ", t).strip()
+        # city-less event/local queries get the home city appended so the
+        # search is meaningful ("good shows" → "good shows in ahmedabad")
+        tlow = t.lower()
+        has_city = any(c in tlow for c in ("ahmedabad", "gandhinagar", "mumbai", "delhi",
+                                           "pune", "hyderabad", "bangalore", "chennai",
+                                           "kolkata", "india"))
+        if not has_city and EVENT_HINTS.search(t):
+            t = f"{t} in {city}".strip()
         return t[:160]
 
     # ------------------------------------------------------------------ #
