@@ -39,13 +39,16 @@ json.dump(payload, sys.stdout)
   # push the result back to the branch (git works on the VM; token has contents:write)
   if [ -d "$WS/.git" ]; then
     export PATH="$PATH:/usr/bin:/usr/local/bin:/snap/bin"
-    ( cd "$WS" && \
-      git config user.email "vm-ops@friday.local" 2>/dev/null; \
-      git config user.name "Friday VM Ops" 2>/dev/null; \
-      git add -f vm_diagnostics/manual/latest.json 2>/dev/null && \
-      git commit -m "vm-ops: $CMD result" 2>/dev/null && \
-      git push origin "HEAD:$BRANCH" 2>/dev/null ) && \
-      say "result pushed to $BRANCH" || say "result push skipped/failed (non-fatal)"
+    PUSH_LOG=$( ( cd "$WS" && \
+      git config user.email "vm-ops@friday.local" 2>&1; \
+      git config user.name "Friday VM Ops" 2>&1; \
+      git add -f vm_diagnostics/manual/latest.json 2>&1 && \
+      git commit -m "vm-ops: $CMD result" 2>&1 && \
+      git push origin "HEAD:$BRANCH" 2>&1 ) 2>&1 )
+    PUSH_RC=$?
+    say "self-push rc=$PUSH_RC: $(printf '%s' "$PUSH_LOG" | tail -3 | tr '\n' ' ')"
+  else
+    say "no .git in workspace — self-push skipped"
   fi
 }
 
@@ -233,25 +236,32 @@ op_friday_diagnose() {
 
 op_friday_netcheck() {
   log friday_netcheck
-  say "=== DNS ==="
-  getent hosts api.deepseek.com 2>/dev/null | head -2 | while read -r l; do say "$l"; done || say "deepseek DNS: FAILED"
-  getent hosts pypi.org 2>/dev/null | head -1 | while read -r l; do say "pypi: $l"; done
-  say "resolv.conf: $(grep -c nameserver /etc/resolv.conf 2>/dev/null) nameservers"
-  say "=== egress probes (10s timeout each) ==="
-  for host in https://pypi.org https://github.com https://api.deepseek.com https://api.tavily.com https://r.jina.ai https://www.google.com; do
+  say "=== PUBLIC IP (OCI metadata service — no internet needed) ==="
+  curl -s -m 5 http://169.254.169.254/opc/v1/vnics/ 2>/dev/null | python3 -c "
+import json,sys
+try:
+    for v in json.load(sys.stdin):
+        print('  publicIp:', v.get('publicIp'), '| privateIp:', v.get('privateIp'))
+except Exception as e:
+    print('  metadata parse failed:', e)
+" | while read -r l; do say "$l"; done
+  say "hostname -I: $(hostname -I 2>/dev/null | tr ' ' ',')"
+  say "=== egress probes (6s timeout) ==="
+  for host in http://api.ipify.org https://api.ipify.org https://pypi.org https://github.com https://api.deepseek.com https://api.github.com https://r.jina.ai; do
     t0=$(date +%s)
-    code=$(curl -s -o /dev/null -w '%{http_code}' -m 10 "$host" 2>&1) || code="ERR:${code}"
+    code=$(curl -s -o /dev/null -w '%{http_code}' -m 6 "$host" 2>&1) || code="ERR"
     t1=$(date +%s)
     say "$host -> $code ($((t1-t0))s)"
   done
-  say "=== TLS detail to deepseek ==="
-  curl -sv -m 12 https://api.deepseek.com/ 2>&1 | grep -E "Connected|SSL|TLS|error|refused|timed" | head -6 | while read -r l; do say "$l"; done
-  say "=== proxy env ==="
-  env | grep -iE "proxy" | head -5 | while read -r l; do say "$l"; done || say "no proxy vars"
-  say "=== iptables (filter) ==="
-  sudo iptables -S 2>/dev/null | head -25 | while read -r l; do say "$l"; done || say "iptables: not readable"
+  say "=== DNS ==="
+  getent hosts api.deepseek.com 2>/dev/null | head -1 | while read -r l; do say "deepseek: $l"; done || say "deepseek DNS FAILED"
+  say "nameservers: $(grep -c nameserver /etc/resolv.conf 2>/dev/null)"
   say "=== listening ports ==="
-  ss -ltn 2>/dev/null | head -10 | while read -r l; do say "$l"; done
+  ss -ltn 2>/dev/null | grep -E ":(80|8000|443) " | while read -r l; do say "$l"; done
+  say "=== nginx ==="
+  command -v nginx >/dev/null 2>&1 && nginx -v 2>&1 | while read -r l; do say "$l"; done || say "nginx NOT installed"
+  say "=== iptables INPUT ==="
+  sudo iptables -S 2>/dev/null | grep -E "dport (80|8000|443)|POLICY" | while read -r l; do say "$l"; done || say "iptables not readable"
   ok friday_netcheck
 }
 
