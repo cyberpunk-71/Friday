@@ -841,6 +841,8 @@ async def searchtest(q: str = "events in ahmedabad today", debug: bool = False,
 
     if debug:
         # raw probes: status + first bytes of each provider's response
+        _raw_cache: dict = {}
+
         async def raw(name, url, params=None):
             try:
                 async with _httpx.AsyncClient(timeout=15, follow_redirects=True,
@@ -849,9 +851,10 @@ async def searchtest(q: str = "events in ahmedabad today", debug: bool = False,
                         r = await c.post(url, data={"q": q})
                     else:
                         r = await c.get(url, params=params)
+                    _raw_cache[name] = r.text
                     return {"provider": name, "status": r.status_code,
                             "len": len(r.text),
-                            "sample": r.text[:1500].replace("\n", " ")}
+                            "sample": r.text[:500].replace("\n", " ")}
             except Exception as e:
                 return {"provider": name, "error": str(e)[:150]}
 
@@ -864,6 +867,22 @@ async def searchtest(q: str = "events in ahmedabad today", debug: bool = False,
         if provider:
             targets = [t for t in targets if t[0].lower() == provider.lower()]
         res = await _aio.gather(*[raw(*t) for t in targets])
+        # parser diagnostics: how many of each pattern matched + what parsed
+        import re as _re
+        for item in res:
+            if "status" not in item or item["status"] != 200:
+                continue
+            html = _raw_cache.get(item["provider"], "")
+            if not html:
+                continue
+            b_algo = len(_re.findall(r'<li class="b_algo"', html))
+            h2a = len(_re.findall(r'<h2><a href="', html))
+            ddg_result = len(_re.findall(r'class="result', html))
+            ddg_a = len(_re.findall(r'class="result__a"', html))
+            gnews_item = len(_re.findall(r"<item>", html))
+            item["parser_diag"] = {"b_algo": b_algo, "h2_a": h2a,
+                                   "ddg_result": ddg_result, "ddg_result_a": ddg_a,
+                                   "gnews_item": gnews_item}
         return {"debug": True, "query": q, "raw": res}
 
     async def try_prov(prov, name):
