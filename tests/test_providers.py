@@ -209,3 +209,16 @@ def test_make_search_defaults():
     assert make_search().__class__.__name__ == "SimSearch"
     _os.environ.pop("SEARCH_PROVIDER", None)
     assert make_search().__class__.__name__ == "DuckDuckGoSearch"
+
+
+def test_bing_parser():
+    from core.providers import BingSearch
+    html = '''
+    <li class="b_algo"><h2><a href="https://example.org/garba">Navratri Garba Night in Ahmedabad</a></h2>
+    <p>Garba at Sabarmati riverfront tonight, entry Rs 200.</p></li>
+    '''
+    out = BingSearch._parse(html, 5)
+    assert len(out) == 1
+    assert out[0]["url"] == "https://example.org/garba"
+    assert "Garba" in out[0]["title"]
+    assert "riverfront" in out[0]["snippet"].lower()

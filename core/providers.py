@@ -481,6 +481,51 @@ class SimSearch(SearchProvider):
         return out[:max_results]
 
 
+class BingSearch(SearchProvider):
+    """Keyless live search via Bing HTML — more tolerant of datacenter/cloud
+    IPs than DuckDuckGo (which often 403s OCI VMs)."""
+
+    UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+          "(KHTML, like Gecko) Chrome/126.0 Safari/537.36")
+
+    async def search(self, query: str, max_results: int = 6) -> list[dict]:
+        url = "https://www.bing.com/search"
+        params = {"q": query, "setlang": "en-in", "cc": "in", "count": str(max_results)}
+        try:
+            async with httpx.AsyncClient(timeout=12, follow_redirects=True,
+                                         headers={"User-Agent": self.UA,
+                                                  "Accept-Language": "en-IN,en;q=0.9"}) as c:
+                r = await c.get(url, params=params)
+                if r.status_code == 200:
+                    out = self._parse(r.text, max_results)
+                    if out:
+                        return out
+        except Exception:
+            pass
+        return []
+
+    @staticmethod
+    def _parse(html: str, max_results: int) -> list[dict]:
+        import re
+        import html as _h
+        out = []
+        for block in re.split(r'<li class="b_algo"', html)[1:]:
+            m = re.search(r'<h2><a href="([^"]+)"[^>]*>(.*?)</a></h2>', block, re.S)
+            p = re.search(r'<p[^>]*>(.*?)</p>', block, re.S)
+            if not m:
+                continue
+            title = re.sub(r"<[^>]+>", "", m.group(2))
+            title = _h.unescape(title).strip()
+            snippet = re.sub(r"<[^>]+>", "", p.group(1)) if p else ""
+            snippet = _h.unescape(snippet).strip()
+            if title:
+                out.append({"title": title[:200], "url": m.group(1),
+                            "snippet": snippet[:300]})
+            if len(out) >= max_results:
+                break
+        return out
+
+
 class GoogleNewsRSS(SearchProvider):
     """Keyless live news/events search via Google News RSS — extremely
     permissive egress (works behind most firewalls), returns real headlines
@@ -529,7 +574,7 @@ class DuckDuckGoSearch(SearchProvider):
           "(KHTML, like Gecko) Chrome/126.0 Safari/537.36")
 
     async def search(self, query: str, max_results: int = 6) -> list[dict]:
-        # live chain: DDG html → DDG lite → Google News RSS → sim fixtures
+        # live chain: DDG html → DDG lite → Bing → Google News RSS → sim fixtures
         async with httpx.AsyncClient(timeout=12, follow_redirects=True,
                                      headers={"User-Agent": self.UA}) as c:
             try:
@@ -548,12 +593,13 @@ class DuckDuckGoSearch(SearchProvider):
                         return out
             except Exception:
                 pass
-        try:
-            out = await GoogleNewsRSS().search(query, max_results)
-            if out:
-                return out
-        except Exception:
-            pass
+        for prov in (BingSearch(), GoogleNewsRSS()):
+            try:
+                out = await prov.search(query, max_results)
+                if out:
+                    return out
+            except Exception:
+                pass
         # graceful degradation → deterministic fixtures (marked not-live)
         sim = await SimSearch().search(query, max_results)
         for s in sim:
