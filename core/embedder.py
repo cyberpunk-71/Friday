@@ -123,12 +123,13 @@ class VectorIndex:
             if not self.signatures:
                 return []
             qbits = np.packbits((query_vec > 0.0).astype(np.uint8)).tobytes()
-            # XOR + popcount over bytes — 48 bytes per doc, fast loop
+            # XOR + popcount over bytes — 48 bytes per doc, fast loop.
+            # int.bit_count is 3.10+; bin().count("1") works on 3.9.
             scores = []
             for sig in self.signatures:
                 diff = 0
                 for a, b in zip(sig, qbits):
-                    diff += (a ^ b).bit_count()
+                    diff += bin(a ^ b).count("1")
                 scores.append(-diff)
             order = np.argsort(scores)[:k]
             return [self.ids[i] for i in order]

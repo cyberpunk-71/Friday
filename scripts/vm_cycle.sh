@@ -196,9 +196,9 @@ op_friday_test() {
     fail friday_test; return
   fi
   # run tests in the DEPLOYED runtime without changing our own cwd
-  TEST_OUT=$(cd "$RUNTIME" && "$RUNTIME/.venv/bin/python" -m pytest tests -q 2>&1 | tail -8)
+  TEST_OUT=$(cd "$RUNTIME" && "$RUNTIME/.venv/bin/python" -m pytest tests -q 2>&1)
   rc=$?
-  printf '%s\n' "$TEST_OUT" | while read -r l; do say "$l"; done
+  printf '%s\n' "$TEST_OUT" | tail -8 | while read -r l; do say "$l"; done
   if [ "$rc" -eq 0 ]; then ok friday_test; else fail friday_test; fi
 }
 
@@ -244,6 +244,14 @@ NGINX
     sudo mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled
     sudo cp /tmp/friday-nginx.conf /etc/nginx/sites-available/friday
     sudo ln -sf /etc/nginx/sites-available/friday /etc/nginx/sites-enabled/friday
+  fi
+  # Oracle Linux 9: SELinux blocks nginx → non-standard ports by default
+  if command -v getenforce >/dev/null 2>&1 && [ "$(getenforce)" = "Enforcing" ]; then
+    say "SELinux Enforcing — allowing nginx network connect (httpd_can_network_connect)"
+    sudo setsebool -P httpd_can_network_connect 1 2>&1 | while read -r l; do say "$l"; done || true
+    sudo setsebool -P httpd_can_network_relay 1 2>&1 | while read -r l; do say "$l"; done || true
+  else
+    say "SELinux: $(getenforce 2>/dev/null || echo not-present)"
   fi
   sudo nginx -t 2>&1 | while read -r l; do say "$l"; done
   sudo systemctl enable nginx 2>/dev/null || true

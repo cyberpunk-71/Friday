@@ -197,7 +197,7 @@ class Cortex:
             max_tokens=cfg.get("speak.max_turn_tokens", 1200))
         while True:
             try:
-                chunk = await anext(stream)
+                chunk = await stream.__anext__()
             except StopAsyncIteration:
                 break
             except RuntimeError:
