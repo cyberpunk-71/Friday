@@ -279,16 +279,21 @@ op_friday_diagnose() {
 
 op_friday_netcheck() {
   log friday_netcheck
-  say "=== PUBLIC IP (OCI metadata service — no internet needed) ==="
-  curl -s -m 5 http://169.254.169.254/opc/v1/vnics/ 2>/dev/null | python3 -c "
-import json,sys
-try:
-    for v in json.load(sys.stdin):
-        print('  publicIp:', v.get('publicIp'), '| privateIp:', v.get('privateIp'))
-except Exception as e:
-    print('  metadata parse failed:', e)
-" | while read -r l; do say "$l"; done
+  say "=== PUBLIC IP ==="
   say "hostname -I: $(hostname -I 2>/dev/null | tr ' ' ',')"
+  PUB=$(curl -s -m 6 https://api.ipify.org 2>/dev/null)
+  say "egress public IP (ipify): ${PUB:-unknown}"
+  OCI_IP=$(curl -s -m 5 -H "Authorization: Bearer Oracle" http://169.254.169.254/opc/v1/vnics/ 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(','.join(v.get('publicIp','') for v in d))" 2>/dev/null)
+  say "OCI metadata public IP: ${OCI_IP:-unavailable}"
+  say "=== SELF-TEST via public URL (proves internet→VM path from inside) ==="
+  if [ -n "$PUB" ]; then
+    c1=$(curl -s -o /dev/null -w '%{http_code}' -m 8 "http://${PUB}/api/health" 2>/dev/null)
+    say "self-test http://${PUB}/api/health -> ${c1:-000}"
+    c2=$(curl -s -o /dev/null -w '%{http_code}' -m 8 "http://friday.${PUB}.nip.io/api/health" 2>/dev/null)
+    say "self-test http://friday.${PUB}.nip.io/api/health -> ${c2:-000}"
+  fi
+  say "=== iptables INPUT (policy + first rules) ==="
+  sudo iptables -L INPUT -n --line-numbers 2>/dev/null | head -15 | while read -r l; do say "$l"; done || say "iptables not readable"
   say "=== egress probes (6s timeout) ==="
   for host in http://api.ipify.org https://api.ipify.org https://pypi.org https://github.com https://api.deepseek.com https://api.github.com https://r.jina.ai; do
     t0=$(date +%s)
@@ -296,15 +301,12 @@ except Exception as e:
     t1=$(date +%s)
     say "$host -> $code ($((t1-t0))s)"
   done
-  say "=== DNS ==="
-  getent hosts api.deepseek.com 2>/dev/null | head -1 | while read -r l; do say "deepseek: $l"; done || say "deepseek DNS FAILED"
-  say "nameservers: $(grep -c nameserver /etc/resolv.conf 2>/dev/null)"
   say "=== listening ports ==="
-  ss -ltn 2>/dev/null | grep -E ":(80|8000|443) " | while read -r l; do say "$l"; done
+  ss -ltn 2>/dev/null | grep -E ":(80|8000|8010|443) " | while read -r l; do say "$l"; done || say "none of 80/8000/8010/443 listening"
   say "=== nginx ==="
   command -v nginx >/dev/null 2>&1 && nginx -v 2>&1 | while read -r l; do say "$l"; done || say "nginx NOT installed"
-  say "=== iptables INPUT ==="
-  sudo iptables -S 2>/dev/null | grep -E "dport (80|8000|443)|POLICY" | while read -r l; do say "$l"; done || say "iptables not readable"
+  say "=== nginx vhosts ==="
+  sudo grep -rh "server_name" /etc/nginx/conf.d /etc/nginx/sites-enabled 2>/dev/null | head -10 | while read -r l; do say "$l"; done || say "no vhosts found"
   ok friday_netcheck
 }
 
