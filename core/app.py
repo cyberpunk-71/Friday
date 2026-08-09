@@ -831,7 +831,7 @@ async def health():
 
 @app.get("/api/admin/searchtest")
 async def searchtest(q: str = "events in ahmedabad today", debug: bool = False,
-                     _: bool = Depends(_admin_auth)):
+                     provider: str = "", _: bool = Depends(_admin_auth)):
     """Live-search self-test: proves real web search works from this host.
     Reports per-provider errors so blocked domains are diagnosable.
     debug=true also returns raw response samples to debug parsers."""
@@ -852,12 +852,15 @@ async def searchtest(q: str = "events in ahmedabad today", debug: bool = False,
             except Exception as e:
                 return {"provider": name, "error": str(e)[:150]}
 
-        res = await _aio.gather(
-            raw("DDG-html", "https://html.duckduckgo.com/html/", params=None),
-            raw("Bing", "https://www.bing.com/search", params={"q": q}),
-            raw("GoogleNews", "https://news.google.com/rss/search",
-                params={"q": q, "hl": "en-IN", "gl": "IN", "ceid": "IN:en"}),
-        )
+        targets = [
+            ("DDG-html", "https://html.duckduckgo.com/html/", None),
+            ("Bing", "https://www.bing.com/search", {"q": q}),
+            ("GoogleNews", "https://news.google.com/rss/search",
+             {"q": q, "hl": "en-IN", "gl": "IN", "ceid": "IN:en"}),
+        ]
+        if _provider:
+            targets = [t for t in targets if t[0].lower() == _provider.lower()]
+        res = await _aio.gather(*[raw(*t) for t in targets])
         return {"debug": True, "query": q, "raw": res}
 
     async def try_prov(prov, name):
