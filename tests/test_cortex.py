@@ -119,7 +119,7 @@ def test_stakes_payment_card(sim_seed, cortex, db):
     ctrl = next(e["ctrl"] for e in events if e["type"] == "ctrl")
     assert ctrl["stakes"] >= 0.7
     cards = [e["card"] for e in events if e["type"] == "card"]
-    assert any(c["type"] == "approval_hint" for c in cards)
+    assert any(c["type"] == "approvals" for c in cards), "deterministic approvals card"
 
 
 def test_offline_degradation_mid_stream(cortex, db):
@@ -265,3 +265,15 @@ def test_cortex_hermes_has_search_provider(db):
     c = Cortex(db)
     assert c.search is not None, "cortex search provider must exist"
     assert c.hermes.search is c.search, "hermes must share the resolved provider"
+
+
+def test_buy_ingress_payment_gate(sim_seed, cortex, db):
+    """'buy X under 10k' must deterministically create a payment-gated task."""
+    events = collect(cortex.turn("buy best handloom saree for mom under 10k"))
+    done = next(e for e in events if e["type"] == "done")
+    assert "approval" in done["reply"].lower() or "pay" in done["reply"].lower()
+    t = db.q1("SELECT * FROM tasks ORDER BY task_id DESC LIMIT 1")
+    assert t["status"] == "waiting_approval"
+    assert t["approval_kind"] == "payment"
+    cards = [e["card"] for e in events if e["type"] == "card"]
+    assert any(c["type"] == "approvals" for c in cards)

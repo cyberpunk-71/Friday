@@ -247,7 +247,7 @@ SCENARIOS = [
     # 32 — Focus session (task + nudge)
     {"id": 32, "title": "Focus session",
      "steps": ["start focos 25m allow github"],
-     "checks": [lambda r, i: check(r, "focus", "25", "github", "start", min_hits=2)]},
+     "checks": [lambda r, i: check(r, "focus", "25", "github", "start", "already active", min_hits=2)]},
     # 33 — Daily tracker (real task)
     {"id": 33, "title": "Daily event tracker",
      "steps": ["set up a daily tracker for bookmyshow events in ahmedabad"],

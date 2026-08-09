@@ -96,11 +96,12 @@ def test_uc3_saree_payment_gate(sim_seed, cortex, db):
     t = _wait_task(db, statuses=("waiting_approval", "completed", "failed"))
     assert t["status"] == "waiting_approval", "payment MUST block"
     assert t["approval_kind"] == "payment"
-    # the money quote went through before the gate
+    # the money quote went through before the gate (deterministic buy ingress:
+    # "under 10k" parses to ₹10,000 and the quote carries it)
     quotes = db.q("SELECT * FROM events WHERE kind='tool_result' AND payload LIKE '%money.quote%'")
     assert len(quotes) >= 1
     payload = json.loads(quotes[0]["payload"])
-    assert payload["outputs"]["quote"]["price"] == 8499
+    assert payload["outputs"]["quote"]["price"] == 10000
 
 
 # =========================================================================== #

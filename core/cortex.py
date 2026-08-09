@@ -608,6 +608,51 @@ class Cortex:
             return {"message": "No active focus session.", "action": "stop_error"}
         return None
 
+    async def _buy_ingress(self, text: str) -> dict | None:
+        """'buy X for mom under 10k' / 'dont ask just buy it' → DETERMINISTIC
+        payment-gated task. The model is unreliable at setting stakes; the
+        payment gate must fire from the user text itself (one of the two
+        blocking gates — never skipped)."""
+        low = text.lower()
+        if not re.search(r"\b(buy|purchase|order|pay for)\b", low):
+            return None
+        # follow-up without item ("dont ask just buy it") → reuse last task
+        item = "the item"
+        price = 0
+        m_price = re.search(r"(?:under|below|around|for)\s*(?:rs\.?|inr|₹)?\s*([\d,.]+)\s*([kK]?)", low)
+        if m_price:
+            price = float(m_price.group(1).replace(",", ""))
+            if m_price.group(2).lower() == "k":
+                price *= 1000
+        m_item = re.search(r"buy\s+(?:the\s+|best\s+)?([a-z][a-z0-9 \-]{4,60}?)(?:\s+(?:for|under|below|around)|$)", low)
+        if m_item:
+            item = m_item.group(1).strip()
+        elif not re.search(r"(buy it|just buy|buy this|go ahead)", low):
+            return None
+        vendor = re.search(r"(?:from|at)\s+([a-z][a-z0-9 ]{2,30})", low)
+        vendor = vendor.group(1).strip() if vendor else "vendor"
+        # create + execute a payment-gated task deterministically
+        from .hands import Hands
+        hands = Hands(self.db, self.search)
+        tid = hands.create_task(f"Buy: {item}", text, corr_id=f"buy_{int(time.time())}")
+        plan = [{
+            "description": f"Quote {item} for approval",
+            "code": f"result = friday.money_quote('{item[:40]}', {price or 0}, '{vendor[:30]}')",
+            "assert": "result and result.get('ok')",
+            "blocking": "payment",
+        }]
+        self.db.exec("UPDATE tasks SET plan_json=?, status='running' WHERE task_id=?",
+                     (json.dumps(plan), tid))
+        self.db.exec("INSERT INTO task_steps(task_id,step_index,description,status,assertion) "
+                     "VALUES(?,0,?, 'pending',?)", (tid, plan[0]["description"], plan[0]["assert"]))
+        async for _ev in hands.execute(tid, "buy"):
+            pass
+        msg = (f"Payment approval is up for **{item}**" +
+               (f" at ₹{price:,.0f}" if price else "") +
+               " — this is one of my two blocking gates, so I won't spend without your tap. "
+               "Check the Approvals card / Tasks panel.")
+        return {"message": msg, "task_id": tid, "gate": "payment"}
+
     def _tracker_ingress(self, text: str) -> dict | None:
         """'set up a daily tracker' / 'keep an eye on X' / 'monitor Y' →
         creates a REAL tracker row (visible in Tasks) + a card. No model
@@ -786,6 +831,23 @@ class Cortex:
             await asyncio.to_thread(self._settle, text, corr_id, book_id,
                                     {"slots": [], "now": self.loom.now_block()},
                                     ctrl_out, cfg_cmd["reply"], 2, 0.0, None)
+            return
+        # purchase — deterministic payment gate (model is unreliable at stakes)
+        buy_event = await self._buy_ingress(text)
+        if buy_event:
+            yield {"type": "ctrl", "ctrl": {"depth": 0.3, "tooliness": 0.8,
+                                            "emotionality": 0.0, "novelty": 0.3,
+                                            "stakes": 0.9, "config_deltas": {},
+                                            "memory_writes": [], "code_intent": False,
+                                            "ask": []}}
+            yield {"type": "delta", "text": buy_event["message"]}
+            yield {"type": "card", "card": {"type": "approvals",
+                                            "items": [{"task_id": buy_event["task_id"],
+                                                       "kind": "payment",
+                                                       "title": buy_event["message"][:120]}]}}
+            yield {"type": "done", "reply": buy_event["message"], "latency_ms": 3,
+                   "cost_usd": 0.0, "corr_id": corr_id, "model": "deterministic",
+                   "slots_used": 0}
             return
         # tracker creation — deterministic so "set up a daily tracker" /
         # "keep an eye on X" really creates a tracker the user can see
