@@ -48,4 +48,4 @@ jobs:
             mkdir -p vm_diagnostics/manual
             printf '%s' '{"ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","command":"'$CMD'","branch":"'$BRANCH'","status":"fail","output":"no latest.json produced"}' > vm_diagnostics/manual/latest.json
           fi
-          python3 scripts/report_result.py "$BRANCH"
+          python3 scripts/report_result.py "$BRANCH" || echo "report step failed (non-fatal)"

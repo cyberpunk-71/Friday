@@ -346,10 +346,34 @@ class SimProvider(LLMProvider):
             return "Saved to Drive/Friday/Summaries/ — link is in the chat card."
         if re.search(r"(sarah|sara)", low) and re.search(r"(draft|email|mail|send)", low):
             return "Email draft is ready in the Approvals panel (draft only — sending needs your tap)."
-        # 9. fallback
-        greeting = "Yeah, I'm Friday. " if re.match(r"(hey|hi|yo|hello)\b", low) else ""
-        return (greeting + "On it." + (f" I remember {len(slots)} relevant things about this."
-                                       if slots else "")).strip()
+        # 9. identity / who-are-you
+        if re.search(r"who (are you|r u|ru)|what are you|about yourself|your name", low):
+            return ("I'm Friday — your one-pass cognitive companion. I remember what you tell me "
+                    "(beliefs, corrections, preferences), do research and tasks in the background, "
+                    "watch your focus, read your books, and learn from every turn. "
+                    "Right now I'm running in OFFLINE mode (this sandbox has no model connection) — "
+                    "on the VM I think with DeepSeek.")
+        # 10. user tells us their name
+        m = re.search(r"i am ([a-z]+)|i'?m ([a-z]+)|my name is ([a-z]+)|call me ([a-z]+)", low)
+        if m:
+            name = next((g for g in m.groups() if g), "friend").capitalize()
+            ctrl["memory_writes"].append({"kind": "fact",
+                                          "text": f"User's name is {name}",
+                                          "importance": 0.9, "entities": [name]})
+            return f"Nice to meet you, {name} — I've saved that. What are we working on?"
+        # 11. factual questions needing live data (offline can't answer honestly)
+        if re.search(r"who is (the )?(pm|prime minister)|current (pm|president)|latest news|today'?s (date|weather)", low):
+            return ("I can't fetch live facts right now — this preview has no internet access to "
+                    "the model or search APIs, and I won't invent an answer. On the deployed VM "
+                    "I'll answer this with a live DeepSeek + web search.")
+        # 12. honest fallback (never "On it." — say what you can't do)
+        if ctrl.get("tooliness", 0) >= 0.3:
+            return ("I've started this in the background Tasks panel. Heads-up: this preview runs "
+                    "OFFLINE (no model/search connection), so results here are limited — the VM "
+                    "deployment uses live DeepSeek and real web search.")
+        return ("I hear you, but this preview is in offline mode — no LLM or web access from the "
+                "sandbox, so I can't think properly here. Try memory/panel features, or wait for "
+                "the VM deployment where I run on DeepSeek.")
 
     def _loop_line(self, now: dict) -> str:
         loops = now.get("open_loops", [])

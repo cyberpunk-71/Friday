@@ -22,7 +22,8 @@ fail() { say "---- op $1: FAILED"; exit_code=1; }
 run_ops() { for op in "$@"; do "op_${op}"; done; }
 
 write_result() {
-  mkdir -p vm_diagnostics/manual
+  # ALWAYS write into the WORKSPACE (cwd-independent — ops may cd elsewhere)
+  mkdir -p "$WS/vm_diagnostics/manual"
   TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   STATUS=$([ $exit_code -eq 0 ] && echo ok || echo fail)
   printf '%s' "$OUT" | python3 -c '
@@ -30,8 +31,11 @@ import json, sys
 payload = {"ts": sys.argv[1], "command": sys.argv[2], "branch": sys.argv[3],
            "status": sys.argv[4], "output": sys.stdin.read()}
 json.dump(payload, sys.stdout)
-' "$TS" "$CMD" "$BRANCH" "$STATUS" > "$RESULT_FILE"
-  say "result written to $RESULT_FILE (status=$STATUS)"
+' "$TS" "$CMD" "$BRANCH" "$STATUS" > "$WS/vm_diagnostics/manual/latest.json"
+  # keep a copy next to the runtime for on-VM debugging
+  mkdir -p "$RUNTIME/vm_diagnostics/manual" 2>/dev/null || true
+  cp "$WS/vm_diagnostics/manual/latest.json" "$RUNTIME/vm_diagnostics/manual/latest.json" 2>/dev/null || true
+  say "result written to $WS/vm_diagnostics/manual/latest.json (status=$STATUS)"
 }
 
 health_ok() {
@@ -149,9 +153,10 @@ op_friday_test() {
     say "no venv on VM — run friday_deploy first"
     fail friday_test; return
   fi
-  cd "$RUNTIME"
-  "$RUNTIME/.venv/bin/python" -m pytest tests -q 2>&1 | tail -8 | while read -r l; do say "$l"; done
-  rc=${PIPESTATUS[0]}
+  # run tests in the DEPLOYED runtime without changing our own cwd
+  TEST_OUT=$(cd "$RUNTIME" && "$RUNTIME/.venv/bin/python" -m pytest tests -q 2>&1 | tail -8)
+  rc=$?
+  printf '%s\n' "$TEST_OUT" | while read -r l; do say "$l"; done
   if [ "$rc" -eq 0 ]; then ok friday_test; else fail friday_test; fi
 }
 
