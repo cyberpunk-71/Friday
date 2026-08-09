@@ -39,12 +39,19 @@ json.dump(payload, sys.stdout)
   # push the result back to the branch (git works on the VM; token has contents:write)
   if [ -d "$WS/.git" ]; then
     export PATH="$PATH:/usr/bin:/usr/local/bin:/snap/bin"
+    # extract the checkout token so push works without extra config
+    TOKEN=$(cd "$WS" && git config --get http.https://github.com/.extraheader 2>/dev/null | sed -n 's/.*[Bb]earer //p; s/.*[Bb]asic //p' | head -1)
+    if [ -n "$TOKEN" ]; then
+      PUSH_URL="https://x-access-token:${TOKEN}@github.com/cyberpunk-71/Friday.git"
+    else
+      PUSH_URL="origin"
+    fi
     PUSH_LOG=$( ( cd "$WS" && \
       git config user.email "vm-ops@friday.local" 2>&1; \
       git config user.name "Friday VM Ops" 2>&1; \
       git add -f vm_diagnostics/manual/latest.json 2>&1 && \
       git commit -m "vm-ops: $CMD result" 2>&1 && \
-      git push origin "HEAD:$BRANCH" 2>&1 ) 2>&1 )
+      git push "$PUSH_URL" "HEAD:$BRANCH" 2>&1 ) 2>&1 )
     PUSH_RC=$?
     say "self-push rc=$PUSH_RC: $(printf '%s' "$PUSH_LOG" | tail -3 | tr '\n' ' ')"
   else
