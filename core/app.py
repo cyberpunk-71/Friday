@@ -12,6 +12,8 @@ import os
 import re
 import time
 import uuid
+from typing import Optional
+
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -252,7 +254,7 @@ async def models_configure(payload: dict, request: Request, _: bool = Depends(_a
 
 
 @app.post("/api/admin/providers/test")
-async def providers_test(payload: dict | None = None, _: bool = Depends(_admin_auth)):
+async def providers_test(payload: Optional[dict] = None, _: bool = Depends(_admin_auth)):
     """Test the DeepSeek provider. Returns categorized diagnostics:
     blocked (no egress / TLS), invalid_key, or ok with a live reply."""
     from .providers import DeepSeekProvider
@@ -315,7 +317,7 @@ async def admin_turns(limit: int = 50, _: bool = Depends(_admin_auth)):
 # TASKS
 # =========================================================================== #
 @app.get("/api/tasks")
-async def tasks_list(status: str | None = None):
+async def tasks_list(status: Optional[str] = None):
     db = get_db()
     if status:
         rows = db.q("SELECT * FROM tasks WHERE status=? ORDER BY updated_ts DESC LIMIT 100", (status,))
@@ -358,7 +360,7 @@ async def tasks_reject(task_id: int):
 
 
 @app.post("/api/tasks/{task_id}/undo")
-async def tasks_undo(task_id: int | None = None):
+async def tasks_undo(task_id: Optional[int] = None):
     from .hands import Hands
     return Hands(get_db()).undo_last(task_id)
 
@@ -481,7 +483,7 @@ async def memory_claim_edit(payload: dict):
 
 
 @app.post("/api/memory/tensions/{tension_id}/resolve")
-async def tension_resolve(tension_id: int, payload: dict | None = None):
+async def tension_resolve(tension_id: int, payload: Optional[dict] = None):
     winner = payload.get("winner_claim_id") if payload else None
     Psyche(get_db()).resolve_tension(tension_id, winner)
     return {"ok": True}
@@ -642,7 +644,7 @@ async def books_ask(book_id: int, payload: dict, request: Request):
 
 
 @app.post("/api/books/{book_id}/quiz")
-async def books_quiz(book_id: int, payload: dict | None = None):
+async def books_quiz(book_id: int, payload: Optional[dict] = None):
     from .books import Books
     bk = Books(get_db())
     chunks = bk.recall_chunks(book_id, "key concepts exercises", k=8)
@@ -657,7 +659,7 @@ async def books_quiz(book_id: int, payload: dict | None = None):
 
 
 @app.post("/api/books/{book_id}/ppt")
-async def books_ppt(book_id: int, payload: dict | None = None):
+async def books_ppt(book_id: int, payload: Optional[dict] = None):
     from .books import Books
     from .tools import FridaySDK
     bk = Books(get_db())

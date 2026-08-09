@@ -21,3 +21,4 @@ pytest-asyncio>=0.23
 # pytesseract>=0.3.10     # OCR engine wrapper (Books)
 # docling>=2.0            # heavy OCR pipeline (Books, VM only)
 # tiktoken>=0.7           # token accounting
+eval_type_backport>=0.2.0
