@@ -214,6 +214,11 @@ class Cortex:
         while True:
             try:
                 chunk = await stream.__anext__()
+                # first successful chunk from the LIVE provider clears any
+                # stale error record (so admin shows the truth)
+                if not prose_started and ctrl is None and self.llm.name == "deepseek":
+                    self.db.set_setting("llm.last_error", None)
+                    self.db.set_setting("llm.last_error_ts", None)
             except StopAsyncIteration:
                 break
             except RuntimeError as e:

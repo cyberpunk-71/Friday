@@ -197,7 +197,9 @@ async def admin_overview(_: bool = Depends(_admin_auth)):
                 "active,source FROM provider_keys")
     return {
         "version": APP_VERSION, "model": os.environ.get("DEEPSEEK_MODEL", "deepseek-chat"),
-        "llm_provider": os.environ.get("DEEPSEEK_API_KEY", "") and "deepseek" or "sim(offline)",
+        # report the ACTUAL running provider (from the live cortex), not env
+        "llm_provider": (request.app.state.cortex.llm.name
+                         if getattr(request.app.state, "cortex", None) else "unknown"),
         "search_provider": os.environ.get("SEARCH_PROVIDER", "sim"),
         "spend_today_usd": round(spend, 4), "daily_budget_usd": daily,
         "budget_pct": round(100 * spend / max(0.01, daily), 1),

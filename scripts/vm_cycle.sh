@@ -147,6 +147,9 @@ op_friday_deploy() {
   if [ ! -f "$RUNTIME/.env" ]; then cp "$RUNTIME/.env.example" "$RUNTIME/.env"; fi
   grep -q "^FRIDAY_PORT=" "$RUNTIME/.env" 2>/dev/null || echo "FRIDAY_PORT=$PORT" >> "$RUNTIME/.env"
   grep -q "^DEEPSEEK_MODEL=" "$RUNTIME/.env" 2>/dev/null || echo "DEEPSEEK_MODEL=deepseek-chat" >> "$RUNTIME/.env"
+  # DB provider keys are authoritative — drop any stale deploy key from .env
+  # so it can never shadow the admin-panel key after a restart
+  sed -i '/^DEEPSEEK_API_KEY=/d' "$RUNTIME/.env" 2>/dev/null || true
   # git is REQUIRED: checkout then does a full clone (with the auth token
   # persisted), which enables the self-push result channel.
   if ! command -v git >/dev/null 2>&1; then
