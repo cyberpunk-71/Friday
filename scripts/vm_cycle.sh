@@ -66,9 +66,8 @@ json.dump(payload, sys.stdout)
     say "no .git in workspace — self-push skipped"
   fi
   # FALLBACK channel (no token needed): paste to a public gist via API.
-  # Egress is confirmed working, so the gist is always reachable from the sandbox.
   if ! grep -q "TUNNEL_URL" "$WS/vm_diagnostics/manual/latest.json" 2>/dev/null; then
-    python3 - "$WS/vm_diagnostics/manual/latest.json" <<'PYEOF' 2>/dev/null | head -1 | while read -r l; do say "gist: $l"; done || true
+    GIST_URL=$(python3 - "$WS/vm_diagnostics/manual/latest.json" <<'PYEOF' 2>/dev/null | head -1
 import json, sys, urllib.request, uuid
 path = sys.argv[1]
 data = open(path).read()
@@ -88,6 +87,8 @@ try:
 except Exception as e:
     print("gist-fail:", e)
 PYEOF
+)
+    say "gist: ${GIST_URL:-unavailable}"
   fi
 }
 
@@ -127,7 +128,7 @@ op_friday_setkey() {
 
 op_friday_deploy() {
   log friday_deploy
-  if [ ! -d "$WS/core" ]; then fail friday_deploy; say "no friday sources in workspace ($WS)"; ls "$WS" | head -5 | while read -r l; do say "  ws: $l"; done; return; fi
+  if [ ! -d "$WS/core" ]; then fail friday_deploy; say "no friday sources in workspace ($WS)"; OUT="${OUT}$(ls "$WS" | head -5 | sed 's/^/  ws: /')\n"; return; fi
   say "workspace: $WS"
   say "os: $(grep -E '^(NAME|VERSION)=' /etc/os-release 2>/dev/null | tr '\n' ' ')"
   say "python: $(python3 --version 2>&1)  pkg: ${PKG:-none}"
@@ -212,7 +213,7 @@ UNIT
     ok friday_deploy
   else
     say "health failed; journal:"
-    sudo journalctl -u "$SVC" -n 30 --no-pager 2>/dev/null | tail -30 | while read -r l; do say "$l"; done
+OUT="${OUT}$( sudo journalctl -u "$SVC" -n 30 --no-pager 2>/dev/null | tail -30 )\n"
     fail friday_deploy
   fi
 }
@@ -233,7 +234,7 @@ op_friday_test() {
   # run tests in the DEPLOYED runtime without changing our own cwd
   TEST_OUT=$(cd "$RUNTIME" && "$RUNTIME/.venv/bin/python" -m pytest tests -q 2>&1)
   rc=$?
-  printf '%s\n' "$TEST_OUT" | tail -8 | while read -r l; do say "$l"; done
+OUT="${OUT}$( printf '%s\n' "$TEST_OUT" | tail -8 )\n"
   if [ "$rc" -eq 0 ]; then ok friday_test; else fail friday_test; fi
 }
 
@@ -283,12 +284,12 @@ NGINX
   # Oracle Linux 9: SELinux blocks nginx → non-standard ports by default
   if command -v getenforce >/dev/null 2>&1 && [ "$(getenforce)" = "Enforcing" ]; then
     say "SELinux Enforcing — allowing nginx network connect (httpd_can_network_connect)"
-    sudo setsebool -P httpd_can_network_connect 1 2>&1 | while read -r l; do say "$l"; done || true
-    sudo setsebool -P httpd_can_network_relay 1 2>&1 | while read -r l; do say "$l"; done || true
+    sudo setsebool -P httpd_can_network_connect 1 2>&1  || true
+    sudo setsebool -P httpd_can_network_relay 1 2>&1  || true
   else
     say "SELinux: $(getenforce 2>/dev/null || echo not-present)"
   fi
-  sudo nginx -t 2>&1 | while read -r l; do say "$l"; done
+  sudo nginx -t 2>&1 
   sudo systemctl enable nginx 2>/dev/null || true
   sudo systemctl restart nginx 2>/dev/null || sudo nginx 2>/dev/null || true
   code=$(curl -s -o /dev/null -w '%{http_code}' -H "Host: friday.${PUBLIC_IP}.nip.io" http://127.0.0.1/ 2>/dev/null)
@@ -300,7 +301,7 @@ op_friday_diagnose() {
   log friday_diagnose
   say "unit=$(systemctl is-active $SVC 2>/dev/null || echo unknown) worker=$(systemctl is-active $WORKER 2>/dev/null || echo unknown)"
   say "ports: $(ss -ltn 2>/dev/null | grep -E ":${PORT} " || echo none)"
-  sudo journalctl -u "$SVC" -n 30 --no-pager 2>/dev/null | tail -30 | while read -r l; do say "$l"; done
+OUT="${OUT}$( sudo journalctl -u "$SVC" -n 30 --no-pager 2>/dev/null | tail -30 )\n"
   say "disk: $(du -sh ${RUNTIME}/data 2>/dev/null || echo missing)"
   if health_ok; then ok friday_diagnose; else fail friday_diagnose; fi
 }
@@ -321,7 +322,7 @@ op_friday_netcheck() {
     say "self-test http://friday.${PUB}.nip.io/api/health -> ${c2:-000}"
   fi
   say "=== iptables INPUT (policy + first rules) ==="
-  sudo iptables -L INPUT -n --line-numbers 2>/dev/null | head -15 | while read -r l; do say "$l"; done || say "iptables not readable"
+OUT="${OUT}$( sudo iptables -L INPUT -n --line-numbers 2>/dev/null | head -15 )\n" || say "iptables not readable"
   say "=== egress probes (6s timeout) ==="
   for host in http://api.ipify.org https://api.ipify.org https://pypi.org https://github.com https://api.deepseek.com https://api.github.com https://r.jina.ai https://html.duckduckgo.com https://duckduckgo.com https://www.bing.com https://news.google.com; do
     t0=$(date +%s)
@@ -330,11 +331,11 @@ op_friday_netcheck() {
     say "$host -> $code ($((t1-t0))s)"
   done
   say "=== listening ports ==="
-  ss -ltn 2>/dev/null | grep -E ":(80|8000|8010|443) " | while read -r l; do say "$l"; done || say "none of 80/8000/8010/443 listening"
+OUT="${OUT}$( ss -ltn 2>/dev/null | grep -E ":(80|8000|8010|443) " )\n" || say "none of 80/8000/8010/443 listening"
   say "=== nginx ==="
-  command -v nginx >/dev/null 2>&1 && nginx -v 2>&1 | while read -r l; do say "$l"; done || say "nginx NOT installed"
+  command -v nginx >/dev/null 2>&1 && nginx -v 2>&1  || say "nginx NOT installed"
   say "=== nginx vhosts ==="
-  sudo grep -rh "server_name" /etc/nginx/conf.d /etc/nginx/sites-enabled 2>/dev/null | head -10 | while read -r l; do say "$l"; done || say "no vhosts found"
+OUT="${OUT}$( sudo grep -rh "server_name" /etc/nginx/conf.d /etc/nginx/sites-enabled 2>/dev/null | head -10 )\n" || say "no vhosts found"
   ok friday_netcheck
 }
 
@@ -364,7 +365,7 @@ op_friday_fix() {
   say "=== import check ==="
   "$RUNTIME/.venv/bin/python" -c "import fastapi, uvicorn; print('imports OK')" 2>&1 | tail -2
   say "=== port 8000 ==="
-  ss -ltn 2>/dev/null | grep ":8000 " | while read -r l; do say "$l"; done || say "nothing on :8000"
+OUT="${OUT}$( ss -ltn 2>/dev/null | grep ":8000 " )\n" || say "nothing on :8000"
   say "=== restart + wait ==="
   sudo systemctl restart "$SVC" "$WORKER"
   if wait_health; then
@@ -372,9 +373,9 @@ op_friday_fix() {
     ok friday_fix
   else
     say "still failing — journal:"
-    sudo journalctl -u "$SVC" -n 30 --no-pager 2>/dev/null | tail -30 | while read -r l; do say "$l"; done
+OUT="${OUT}$( sudo journalctl -u "$SVC" -n 30 --no-pager 2>/dev/null | tail -30 )\n"
     say "--- unit status ---"
-    systemctl status "$SVC" --no-pager 2>/dev/null | tail -12 | while read -r l; do say "$l"; done
+OUT="${OUT}$( systemctl status "$SVC" --no-pager 2>/dev/null | tail -12 )\n"
     fail friday_fix
   fi
 }
@@ -450,7 +451,7 @@ op_friday_tunnel() {
     if [ "$code" = "200" ]; then ok friday_tunnel; else fail friday_tunnel; fi
   else
     say "no tunnel URL found in journal - last lines:"
-    sudo journalctl -u friday-tunnel -n 30 --no-pager 2>/dev/null | tail -30 | while read -r l; do say "$l"; done
+OUT="${OUT}$( sudo journalctl -u friday-tunnel -n 30 --no-pager 2>/dev/null | tail -30 )\n"
     fail friday_tunnel
   fi
 }
