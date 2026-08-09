@@ -22,6 +22,7 @@ LIVE_TRIGGERS = re.compile(
     r"scooter|phone|yatra|book|buy|compare|track|monitor|watch|news|latest|today|"
     r"tomorrow|tonight|events?|happening|upcoming|shows?|concerts?|exhibition|"
     r"festival|garba|movies?|bookmyshow|schedule|what'?s on|near me|"
+    r"who is|who'?s|who are|current|mayor|minister|president|pm\b|cm\b|"
     r"how much|what's the|research)\b", re.I)
 
 FOCUS_TRIGGERS = re.compile(r"\b(start|begin|stop|end)\b.*\bfoc\w*|foc\w*\b.*\b(min|allow)", re.I)
