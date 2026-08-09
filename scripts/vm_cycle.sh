@@ -381,7 +381,14 @@ op_friday_tunnel() {
   # Egress is confirmed working (netcheck), so this bypasses the ingress block.
   if [ ! -x /usr/local/bin/cloudflared ]; then
     say "downloading cloudflared..."
-    sudo curl -sL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /usr/local/bin/cloudflared 2>&1 | tail -1 || true
+    ARCH=$(uname -m)
+    case "$ARCH" in
+      x86_64|amd64) CFARCH="amd64" ;;
+      aarch64|arm64) CFARCH="arm64" ;;
+      *) say "unknown arch $ARCH"; fail friday_tunnel; return ;;
+    esac
+    say "arch: $ARCH -> cloudflared-linux-${CFARCH}"
+    sudo curl -sL "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${CFARCH}" -o /usr/local/bin/cloudflared 2>&1 | tail -1 || true
     sudo chmod +x /usr/local/bin/cloudflared
   fi
   if [ ! -x /usr/local/bin/cloudflared ]; then
