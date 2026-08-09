@@ -287,8 +287,10 @@ class SimProvider(LLMProvider):
             lines = [f"- **{s['text']}** (confidence {s.get('score', 0):.2f})" for s in slots[:4]]
             return ("Here's what I believe about you right now:\n" + "\n".join(lines) +
                     "\n\nRate any of them with 👍/👎 and I'll update α/β.")
-        # 6. corrections (user told us something is wrong)
-        if re.search(r"(don'?t live|not |actually |wrong|correction)", low):
+        # 6. corrections (user told us something is wrong) — strict patterns
+        # only; "do not say X" must never look like a correction
+        if re.search(r"(don'?t live|actually |you were wrong|that'?s not right|"
+                     r"correction:|not true|i meant|i (said|told) you)", low):
             return "Noted — I've corrected that. It now outranks anything I inferred before."
         # 7. slot-grounded answers (the smartness observable in tests) —
         #    pick the MOST SPECIFIC match: flight-prefs pattern wins over the

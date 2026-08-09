@@ -283,7 +283,7 @@ class Cortex:
                 + f"\n\nUSER QUESTION: {text[:3000]}\n\n"
                 "IMPORTANT: Answer using the LIVE SEARCH RESULTS above. "
                 "Summarize them with sources even if they are news articles or "
-                "guides rather than ticketed listings. Do NOT say you have no data."
+                "guides rather than ticketed listings. Never claim you lack data."
             )
         if pf and pf.web:
             user_msg += f"\n\nLIVE PAGE SNIPPET (BookMyShow/events):\n{pf.web[:2500]}"
