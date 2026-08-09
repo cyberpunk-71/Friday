@@ -38,6 +38,7 @@ class PreFire:
     web: str = ""               # web-read snippet (e.g. BookMyShow events page)
     sandbox_warm: bool = False
     burned_usd: float = 0.0
+    error: str = ""             # last exception (diagnostics — never silent)
 
 
 # typos / aliases for city names — "ahemedbad" must still search ahmedabad
@@ -83,8 +84,10 @@ class Hermes:
                     q = self._core_query(last["user_text"], city)
             pf.search = await self.search.search(q, 5)
             pf.burned_usd = 0.0001
-        except Exception:
-            pass
+            if not pf.search:
+                pf.error = f"search returned empty for q={q!r}"
+        except Exception as e:
+            pf.error = f"{type(e).__name__}: {str(e)[:200]} (q={q!r})"
         low = text.lower()
         # events/movies/BookMyShow → also fetch the city's BMS events page so
         # the model has REAL listings, not just news headlines

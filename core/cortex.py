@@ -718,6 +718,7 @@ class Cortex:
             "titles": [r.get("title", "")[:80] for r in (_pf.search[:5] if _pf else [])],
             "web_len": len(_pf.web) if _pf and _pf.web else 0,
             "city_hint": city_hint,
+            "error": _pf.error if _pf else "no prefire",
         }, ensure_ascii=False))
         sense["prefire"] = self.hermes.prefire_state
         yield {"type": "sense", "slots": sense["slots"], "confidence": sense["confidence"],
