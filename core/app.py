@@ -206,6 +206,8 @@ async def admin_overview(_: bool = Depends(_admin_auth)):
         "genome_head": db.get_setting("genome.head"),
         "genome_log": Genome(db=db).log(8),
         "gym": db.get_setting("nightly.last_report"),
+        "llm_last_error": db.get_setting("llm.last_error"),
+        "llm_last_error_ts": db.get_setting("llm.last_error_ts"),
         "latency": db.q1("SELECT AVG(latency_ms) a FROM turns WHERE created_ts>?", (time.time() - 86400,)),
         "cost_avg": db.q1("SELECT AVG(cost_usd) a FROM turns WHERE created_ts>?", (time.time() - 86400,)),
     }

@@ -45,7 +45,7 @@ class Focus:
         return {"ok": True, "session_id": s["session_id"], "elapsed_min": elapsed, "status": status}
 
     def log_drift(self, url: str, title: str = "") -> dict:
-        """Called by the MV3 extension during a session. Returns nudge actions."""
+        """Called by the MV3 extension / PWA sensor during a session. Returns nudge actions."""
         s = self.active()
         if not s:
             return {"ok": True, "nudges": []}
@@ -55,9 +55,11 @@ class Focus:
         if any(d in domain or domain in d for d in allow):
             return {"ok": True, "nudges": [], "allowed": True}
         now = time.time()
-        # dedupe same-url drifts within 60s
+        # dedupe same-url drifts within 10s (prevents double-fire from the PWA
+        # sensor + extension reporting the same drift; NOT a 60s gate that
+        # swallows repeated drifts)
         dup = self.db.q1("SELECT id FROM distraction_events WHERE session_id=? AND url=? AND ts>?",
-                         (s["session_id"], url, now - 60))
+                         (s["session_id"], url, now - 10))
         if dup:
             return {"ok": True, "nudges": []}
         self.db.exec("INSERT INTO distraction_events(session_id,url,ts,kind) VALUES(?,?,?, 'drift')",
@@ -69,23 +71,26 @@ class Focus:
                 "nudges": self._nudge_plan(drifts, url)}
 
     def _nudge_plan(self, drift_no: int, url: str) -> list[dict]:
-        """Coalesced channels: toast every drift; chrome every 10m; voice from drift 3."""
+        """IMMEDIATE nudges: toast + chrome on EVERY drift, voice from drift 2.
+        A 20s per-channel safety cooldown only prevents double-fire from the
+        PWA sensor and the extension reporting the same drift."""
         plan: list[dict] = []
         ch = cfg.get("focus.nudge_channels", {})
-        cooldown = cfg.get("focus.nudge_cooldown_min", 10) * 60
+        safe = 20
         now = time.time()
         if ch.get("toast", True):
             plan.append({"channel": "toast", "message": f"Drift #{drift_no}: {url}"})
         if ch.get("chrome", True):
             last = self.db.q1(
                 "SELECT created_ts FROM nudges WHERE kind='focus' AND channel='chrome' "
-                "AND created_ts>? ORDER BY created_ts DESC LIMIT 1", (now - cooldown,))
+                "AND created_ts>? ORDER BY created_ts DESC LIMIT 1", (now - safe,))
             if not last:
-                plan.append({"channel": "chrome", "message": "You drifted — back to focus?"})
-        if ch.get("voice", True) and drift_no >= cfg.get("focus.voice_after_drifts", 3):
+                plan.append({"channel": "chrome", "message": f"You drifted to {url} — back to focus!"})
+        voice_from = cfg.get("focus.voice_after_drifts", 2)
+        if ch.get("voice", True) and drift_no >= voice_from:
             last = self.db.q1(
                 "SELECT created_ts FROM nudges WHERE kind='focus' AND channel='voice' "
-                "AND created_ts>? ORDER BY created_ts DESC LIMIT 1", (now - cooldown,))
+                "AND created_ts>? ORDER BY created_ts DESC LIMIT 1", (now - safe,))
             if not last:
                 plan.append({"channel": "voice", "message": "Back to work?"})
         for p in plan:

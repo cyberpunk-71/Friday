@@ -216,10 +216,16 @@ class Cortex:
                 chunk = await stream.__anext__()
             except StopAsyncIteration:
                 break
-            except RuntimeError:
-                # network unavailable — degrade to the deterministic provider
-                # mid-turn; the fallback's output flows through the SAME
-                # incremental ⟨CTRL⟩ parser below
+            except RuntimeError as e:
+                # network unavailable / bad key / provider error — record the
+                # REAL reason (visible in admin overview + this turn) and
+                # degrade to the deterministic provider mid-turn
+                err = str(e)[:300]
+                self.db.set_setting("llm.last_error", err)
+                self.db.set_setting("llm.last_error_ts", time.time())
+                yield {"type": "warning", "message": f"Live model unavailable ({err[:120]}) — using fallback."}
+                # the fallback's output flows through the SAME incremental
+                # ⟨CTRL⟩ parser below
                 self.llm = SimProviderFallback()
                 stream = self.llm.stream(messages)
                 continue

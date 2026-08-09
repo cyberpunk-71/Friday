@@ -181,6 +181,10 @@ function handleChatEvent(ev, typing) {
       break;
     }
     case "card": renderCard(ev.card); break;
+    case "warning": {
+      toast(`⚠ ${esc(ev.message)}`, "bad");
+      break;
+    }
     case "ask": {
       toast(`❓ ${esc(ev.question)}`, "chrome");
       renderCard({ type: "ask", question: ev.question });
@@ -494,6 +498,7 @@ $("#focus-start").addEventListener("click", async () => {
   const allow = $("#focus-allow").value.split(",").map(s => s.trim()).filter(Boolean);
   const r = await api("/api/focus/start", { method: "POST", body: JSON.stringify({ minutes, allow }) });
   toast(r.ok ? `🎯 Focus ${minutes}m started` : `focus: ${esc(r.error)}`);
+  armNotifications();      // ask for notification permission so drift nudges are visible
   loadFocus();
 });
 $("#focus-stop").addEventListener("click", async () => {
@@ -760,13 +765,13 @@ $$(".tab[data-atab]").forEach(t => t.addEventListener("click", () => {
 /* ============================== focus sensor ============================== */
 /* PWA-level drift sensor: when a focus session is active and this tab loses
    visibility (user switched to another tab/app), report a drift so Friday can
-   nudge. Full tab tracking comes from the MV3 extension (download via
-   /api/extension/zip), this covers the no-extension case. */
+   nudge immediately. Full tab tracking comes from the MV3 extension (download
+   via /api/extension/zip), this covers the no-extension case. */
 let lastDriftReport = 0;
 document.addEventListener("visibilitychange", () => {
   if (document.hidden && state.focus.active) {
     const now = Date.now();
-    if (now - lastDriftReport < 15000) return;      // server also dedupes 60s
+    if (now - lastDriftReport < 4000) return;       // server also dedupes 10s
     lastDriftReport = now;
     fetch("/api/focus/drift", {
       method: "POST",
@@ -775,6 +780,22 @@ document.addEventListener("visibilitychange", () => {
     }).catch(() => {});
   }
 });
+
+/* Chrome-desktop notifications for nudges — visible even when the Friday tab
+   is hidden (this is the "immediate nudge" the user asked for). */
+function notifyChrome(title, body) {
+  if (!("Notification" in window)) return;
+  if (Notification.permission === "granted") {
+    try { new Notification(title, { body, icon: "/static/icon128.png" }); } catch (e) {}
+  } else if (Notification.permission !== "denied") {
+    Notification.requestPermission();
+  }
+}
+function armNotifications() {
+  if ("Notification" in window && Notification.permission === "default") {
+    Notification.requestPermission();
+  }
+}
 
 /* ============================== live loops ============================== */
 async function pollOverview() {
@@ -818,7 +839,8 @@ async function nudgeStream() {
           const ev = JSON.parse(line.slice(5));
           if (ev.type === "nudge") {
             toast(esc(ev.nudge.message), ev.nudge.channel);
-            if (ev.nudge.channel === "voice") { const u = new SpeechSynthesisUtterance(ev.nudge.message); u.lang = "en-IN"; speechSynthesis.speak(u); }
+            notifyChrome("🎯 Friday — focus", ev.nudge.message);
+            if (ev.nudge.channel === "voice" || ev.nudge.kind === "focus") { const u = new SpeechSynthesisUtterance(ev.nudge.message); u.lang = "en-IN"; speechSynthesis.speak(u); }
           }
         } catch (e) {}
       }
