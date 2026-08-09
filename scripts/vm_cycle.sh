@@ -36,6 +36,17 @@ json.dump(payload, sys.stdout)
   mkdir -p "$RUNTIME/vm_diagnostics/manual" 2>/dev/null || true
   cp "$WS/vm_diagnostics/manual/latest.json" "$RUNTIME/vm_diagnostics/manual/latest.json" 2>/dev/null || true
   say "result written to $WS/vm_diagnostics/manual/latest.json (status=$STATUS)"
+  # push the result back to the branch (git works on the VM; token has contents:write)
+  if [ -d "$WS/.git" ]; then
+    export PATH="$PATH:/usr/bin:/usr/local/bin:/snap/bin"
+    ( cd "$WS" && \
+      git config user.email "vm-ops@friday.local" 2>/dev/null; \
+      git config user.name "Friday VM Ops" 2>/dev/null; \
+      git add vm_diagnostics/manual/latest.json 2>/dev/null && \
+      git commit -m "vm-ops: $CMD result" 2>/dev/null && \
+      git push origin "HEAD:$BRANCH" 2>/dev/null ) && \
+      say "result pushed to $BRANCH" || say "result push skipped/failed (non-fatal)"
+  fi
 }
 
 health_ok() {
