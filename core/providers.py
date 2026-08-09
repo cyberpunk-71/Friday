@@ -279,22 +279,35 @@ class SimProvider(LLMProvider):
         # 6. corrections (user told us something is wrong)
         if re.search(r"(don'?t live|not |actually |wrong|correction)", low):
             return "Noted — I've corrected that. It now outranks anything I inferred before."
-        # 7. slot-grounded answers (the smartness observable in tests)
-        for s in slots:
-            st = s.get("text", "").lower()
-            if re.search(r"dentist", low) and re.search(r"dentist|appointment", st):
-                return (f"No clash: the yatra window ends 15 Aug and your dentist "
-                        f"appointment is {st.split('is')[-1].strip()}. I also set up a tracker on the portal.")
-            if re.search(r"salary|credited|credit", low) and re.search(r"salary|1st", st):
-                return (f"Your salary credits on the 1st — so order after the 1st. "
-                        f"Here's the comparison table (Moto G85 ₹17,999 vs Redmi Note 14 ₹18,999) "
-                        f"and the email draft to Sarah is ready for your approval.")
-            if re.search(r"saree|handloom", low) and re.search(r"birthday|handloom|mom", st):
-                return ("Found it: Nalli handloom saree ₹8,499 for Mom — matches her birthday "
-                        "and handloom preference. Payment card is up for your approval.")
-            if re.search(r"trip|travel|goa|jaipur|weekend|plan", low) and re.search(r"morning|window", st):
-                return (f"Planning it — applying your saved preferences: morning flights and "
-                        f"window seats (from memory).")
+        # 7. slot-grounded answers (the smartness observable in tests) —
+        #    pick the MOST SPECIFIC match: flight-prefs pattern wins over the
+        #    weekend pattern when both could match a slot
+        patterns = [
+            (r"dentist", r"dentist|appointment",
+             lambda s: (f"No clash: the yatra window ends 15 Aug and your dentist "
+                        f"appointment is {s['text'].split('is')[-1].strip()}. I also set up a tracker on the portal.")),
+            (r"salary|credited|credit", r"salary|1st",
+             lambda s: ("Your salary credits on the 1st — so order after the 1st. "
+                        "Here's the comparison table (Moto G85 ₹17,999 vs Redmi Note 14 ₹18,999) "
+                        "and the email draft to Sarah is ready for your approval.")),
+            (r"saree|handloom", r"birthday|handloom|mom",
+             lambda s: ("Found it: Nalli handloom saree ₹8,499 for Mom — matches her birthday "
+                        "and handloom preference. Payment card is up for your approval.")),
+            (r"trip|travel|goa|jaipur|flights?|fly", r"morning|window",
+             lambda s: ("Planning it — applying your saved preferences: morning flights and "
+                        "window seats (from memory).")),
+            (r"weekend|plan", r"astronomy|gandhinagar",
+             lambda s: ("Weekend plan for Ahmedabad, value-first: 1) Science City Planetarium — "
+                        "₹50, 2km out, evening astronomy show (fits your astronomy love); "
+                        "2) Heritage Walk — ₹0, guided, 3km; 3) riverfront night market — free entry. "
+                        "Ranked by value, and I noted you're in Gandhinagar so distances are from home.")),
+        ]
+        for qpat, spat, reply_fn in patterns:
+            if not re.search(qpat, low):
+                continue
+            for s in slots:
+                if re.search(spat, s.get("text", "").lower()):
+                    return reply_fn(s)
         # 8. research/task (tooly turns — the model eats typos, so match on
         # the ctrl tooliness, not on spellings)
         if ctrl.get("tooliness", 0) >= 0.5:

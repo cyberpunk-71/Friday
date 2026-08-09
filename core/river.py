@@ -512,7 +512,19 @@ class River:
         return self.db.q("SELECT * FROM constraints WHERE ttl_days<0 OR created_ts + ttl_days*86400 > ?", (now,))
 
     def open_loops(self, limit: int = 20) -> list[dict]:
-        return self.db.q("SELECT * FROM open_loops WHERE status='open' ORDER BY priority DESC, created_ts ASC LIMIT ?", (limit,))
+        """Dedupe by normalized text (same loop can be re-uttered)."""
+        rows = self.db.q("SELECT * FROM open_loops WHERE status='open' "
+                         "ORDER BY priority DESC, created_ts ASC")
+        seen, out = set(), []
+        for r in rows:
+            key = re.sub(r"[^a-z0-9]", "", r["text"].lower())[:80]
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(r)
+            if len(out) >= limit:
+                break
+        return out
 
     def close_loop(self, loop_id: int) -> None:
         self.db.exec("UPDATE open_loops SET status='closed', last_activity_ts=? WHERE loop_id=?",
