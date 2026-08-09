@@ -457,6 +457,23 @@ OUT="${OUT}$( sudo journalctl -u friday-tunnel -n 30 --no-pager 2>/dev/null | ta
   fi
 }
 
+op_friday_chattest() {
+  log friday_chattest
+  local q="${FRIDAY_TEST_QUERY:-who is mayor of ahmedabad}"
+  say "query: ${q}"
+  # POST a real chat turn and capture the SSE stream
+  out=$(curl -s -N -m 90 -X POST "http://127.0.0.1:${PORT}/api/chat" \
+        -H 'Content-Type: application/json' \
+        -d "{\"text\":\"${q}\"}" 2>&1 | head -c 5000)
+  say "REPLY_STREAM_START"
+  printf '%s' "$out" | sed 's/^/  /' | while IFS= read -r l; do OUT="${OUT}${l}\n"; done
+  say "REPLY_STREAM_END"
+  # pull the saved turn (model + latency + cost)
+  hist=$(curl -s -m 10 "http://127.0.0.1:${PORT}/api/chat/history?limit=1" 2>&1 | head -c 1500)
+  say "LAST_TURN: ${hist}"
+  ok friday_chattest
+}
+
 op_friday_remove() {
   log friday_remove
   sudo systemctl stop "$SVC" "$WORKER" 2>/dev/null
@@ -497,6 +514,7 @@ case "$CMD" in
   friday_nginx)       run_ops friday_nginx ;;
   friday_diagnose)    run_ops friday_diagnose ;;
   friday_netcheck)    run_ops friday_netcheck ;;
+  friday_chattest)    run_ops friday_chattest ;;
   friday_fix)         run_ops friday_fix ;;
   friday_tunnel)      run_ops friday_tunnel ;;
   friday_remove)      run_ops friday_remove ;;
