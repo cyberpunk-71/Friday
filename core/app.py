@@ -39,11 +39,41 @@ APP_VERSION = "0.1.0"
 # --------------------------------------------------------------------------- #
 # lifespan
 # --------------------------------------------------------------------------- #
+def _seed_profile_if_fresh(db) -> bool:
+    """First-run seed: a brand-new DB gets the canonical user profile so the
+    panels and use-case demos work immediately. Disable with FRIDAY_SEED_PROFILE=0."""
+    if os.environ.get("FRIDAY_SEED_PROFILE", "1") == "0":
+        return False
+    if db.q1("SELECT COUNT(*) c FROM events")["c"] > 0:
+        return False
+    river = River(db)
+    seeds = [
+        ("fact", "User has a dentist appointment on 2026-08-25 at 11:00 AM", 0.9, ["Dentist"]),
+        ("fact", "Salary is credited on the 1st of every month", 0.8, []),
+        ("preference", "User prefers morning flights and window seats", 0.7, []),
+        ("preference", "User loves handloom sarees for Mom", 0.75, ["Mom"]),
+        ("fact", "Mom's birthday is on 12 September", 0.85, ["Mom"]),
+        ("fact", "User lives in Gandhinagar", 0.9, ["Gandhinagar"]),
+        ("preference", "User loves astronomy", 0.7, []),
+        ("fact", "User works on ML research between 9 and 11 am", 0.6, []),
+        ("preference", "User values budget over luxury", 0.5, []),
+    ]
+    for kind, text, imp, ents in seeds:
+        river.record("memory_write", "user",
+                     {"atom": {"kind": kind, "text": text, "importance": imp,
+                               "entities": ents}}, source_weight=10.0)
+    river.materialize()
+    db.set_setting("seed.profile", "v1")
+    return True
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db = get_db()
     # live settings → config
     cfg.set_live(db.all_settings())
+    # first-run profile seed (canonical user profile for demos)
+    _seed_profile_if_fresh(db)
     # skill procedures → river (kind=procedure atoms, retrieved by demand)
     river = River(db)
     river.materialize()

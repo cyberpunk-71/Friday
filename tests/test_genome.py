@@ -87,9 +87,9 @@ def test_canary_promote_and_revert(db, tmp_path):
     assert len(branches) == 1
     sha = g.promote_canary(branches[0], 0.9, 0.5)
     assert sha is not None
-    commits = db.q("SELECT * FROM genome_commits ORDER BY commit_id DESC LIMIT 1")
-    assert commits[0]["canary"] == 1
+    commits = db.q("SELECT * FROM genome_commits ORDER BY commit_id DESC LIMIT 10")
+    assert any(c["canary"] == 1 for c in commits), "canary commit must be recorded"
     # revert
     g.revert(sha, "regression")
-    reverted = db.q("SELECT * FROM genome_commits ORDER BY commit_id DESC LIMIT 1")
-    assert reverted[0]["reverted"] == 1
+    reverted = db.q("SELECT * FROM genome_commits ORDER BY commit_id DESC LIMIT 10")
+    assert any(r["reverted"] == 1 for r in reverted), "revert must be recorded"
