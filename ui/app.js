@@ -649,6 +649,14 @@ $("#oc-go").addEventListener("click", async () => {
   try { const r = await api("/api/admin/oneclick", { method: "POST", body: JSON.stringify({ kind, value }) }); $("#oc-result").innerHTML = `<span class="chip good">✓ ${esc(r.note)}</span>`; }
   catch (e) { $("#oc-result").innerHTML = `<span class="chip bad">${esc(e.message)}</span>`; }
 });
+function copyServerUrl() {
+  const url = location.origin;
+  navigator.clipboard.writeText(url).then(() => {
+    $("#oc-ext-status").innerHTML = `<span class="chip good">✓ copied: ${esc(url)}</span>`;
+  }).catch(() => {
+    $("#oc-ext-status").innerHTML = `<span class="chip">${esc(url)}</span>`;
+  });
+}
 
 /* params tree — every config knob, live-editable */
 let paramDirty = {};

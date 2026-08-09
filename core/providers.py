@@ -253,6 +253,12 @@ class SimProvider(LLMProvider):
                 return (f"Hey — welcome back, it's been {d}h. {self._loop_line(now)} "
                         "What are we working on?").strip()
             return "Hey! I'm here — one chat for research, tasks, memory, focus, books. What do you need?"
+        # 1b. how-are-you / smalltalk
+        if re.search(r"how are you|how('| a)?re you|how r u|what'?s up|kaise ho|kya haal", low):
+            return ("I'm good — memory loaded, a few open loops, and the river is flowing. "
+                    "I'm running in OFFLINE mode on this preview though: the sandbox has no "
+                    "model connection, so I'm running on my deterministic fallback. On the VM "
+                    "I'm thinking with DeepSeek. Want me to pull up something from memory?")
         # 2. focus
         m = re.search(r"(?:start|begin) foc\w* ?(\d+) ?m", low)
         if m and ("allow" in low or "focus" in low or True):
