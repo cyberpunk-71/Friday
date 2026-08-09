@@ -14,6 +14,22 @@ import yaml
 _ROOT = Path(__file__).resolve().parent.parent
 
 
+def _load_dotenv(root: Path) -> None:
+    """Tiny .env loader (no external dep). VM systemd also uses EnvironmentFile."""
+    env_path = root / ".env"
+    if not env_path.exists():
+        return
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, val = line.partition("=")
+        key = key.strip()
+        val = val.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = val
+
+
 def _load_yaml(path: Path) -> dict:
     if path.exists():
         with open(path, "r", encoding="utf-8") as f:
@@ -28,6 +44,7 @@ class Config:
     _lock = threading.Lock()
 
     def __init__(self) -> None:
+        _load_dotenv(_ROOT)
         self.root = _ROOT
         self.data_dir = Path(os.environ.get("FRIDAY_DATA_DIR", _ROOT / "data"))
         self.genome_dir = Path(os.environ.get("FRIDAY_GENOME_DIR", _ROOT / "genome"))
