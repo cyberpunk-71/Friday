@@ -247,11 +247,18 @@ async def models_configure(payload: dict, request: Request, _: bool = Depends(_a
             "ON CONFLICT(provider,scope) DO UPDATE SET api_key=excluded.api_key,"
             " active=1, source='admin', updated_ts=excluded.updated_ts",
             (provider, scope, key, time.time(), time.time()))
-    # if this is THE deepseek key, wire it live
+    # if this is THE deepseek key, wire it live (and it persists in the DB —
+    # make_llm() reads the DB first, so restarts keep the admin-panel key)
     if provider == "deepseek" and scope == "default":
         os.environ["DEEPSEEK_API_KEY"] = key
         from .providers import DeepSeekProvider
         request.app.state.cortex.llm = DeepSeekProvider(api_key=key)
+        # remove the stale deploy key from .env so it never wins again
+        env_path = cfg.root / ".env"
+        if env_path.exists():
+            lines = [l for l in env_path.read_text().splitlines()
+                     if not l.startswith("DEEPSEEK_API_KEY=")]
+            env_path.write_text("\n".join(lines) + "\n")
     return {"ok": True, "provider": provider, "scope": scope, "masked": f"••••{key[-4:]}"}
 
 

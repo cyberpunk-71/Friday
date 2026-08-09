@@ -399,9 +399,23 @@ class SimProvider(LLMProvider):
 
 
 def make_llm() -> LLMProvider:
+    """Provider selection with precedence: DB provider_keys (admin panel /
+    chat-set) > .env DEEPSEEK_API_KEY > offline sim."""
+    # 1. DB key (admin panel / chat) wins — it's the user's live choice
+    try:
+        from .db import get_db
+        row = get_db().q1(
+            "SELECT api_key FROM provider_keys WHERE provider='deepseek' "
+            "AND scope='default' AND active=1 ORDER BY updated_ts DESC LIMIT 1")
+        if row and row["api_key"]:
+            return DeepSeekProvider(api_key=row["api_key"])
+    except Exception:
+        pass
+    # 2. env key (deploy-provided)
     key = os.environ.get("DEEPSEEK_API_KEY", "")
     if key:
         return DeepSeekProvider(api_key=key)
+    # 3. offline deterministic
     return SimProvider()
 
 
