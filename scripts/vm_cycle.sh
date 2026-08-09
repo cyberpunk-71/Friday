@@ -57,7 +57,7 @@ json.dump(payload, sys.stdout)
     PUSH_LOG=$( ( cd "$WS" && \
       git config user.email "vm-ops@friday.local" 2>&1; \
       git config user.name "Friday VM Ops" 2>&1; \
-      git add -f vm_diagnostics/manual/latest.json 2>&1 && \
+      git add -f vm_diagnostics/manual/latest.json vm_diagnostics/eval 2>&1 && \
       git commit -m "vm-ops: $CMD result" 2>&1 && \
       git push origin "HEAD:$BRANCH" 2>&1 ) 2>&1 )
     PUSH_RC=$?
@@ -482,16 +482,18 @@ op_friday_eval() {
   local outdir="$RUNTIME/data/eval_report"
   rm -rf "$outdir" 2>/dev/null || true
   # run the 50-scenario eval suite against the live app (real DeepSeek)
-  ( cd "$RUNTIME" && .venv/bin/python tests/eval_suite.py --base "http://127.0.0.1:${PORT}" --out "$outdir" 2>&1 ) | tail -70
+  EVAL_OUT=$(cd "$RUNTIME" && .venv/bin/python tests/eval_suite.py --base "http://127.0.0.1:${PORT}" --out "$outdir" 2>&1)
+  EVAL_RC=$?
+  OUT="${OUT}$(printf '%s\n' "$EVAL_OUT" | tail -60)\n"
   # copy report into workspace so it gets pushed back
   mkdir -p "$WS/vm_diagnostics/eval"
   cp -r "$outdir"/. "$WS/vm_diagnostics/eval/" 2>/dev/null || true
   if [ -f "$outdir/eval_report.json" ]; then
-    python3 -c "
+    OUT="${OUT}$(python3 -c "
 import json
 d=json.load(open('$outdir/eval_report.json'))
-print('EVAL_SUMMARY: %d/%d passed in %ds' % (d['passed'], d['scenarios'], d['elapsed_s']))
-" | while IFS= read -r l; do OUT="${OUT}${l}\n"; done
+print('EVAL_SUMMARY: %d/%d passed in %ds (rc=%d)' % (d['passed'], d['scenarios'], d['elapsed_s'], $EVAL_RC))
+")\n"
     ok friday_eval
   else
     say "eval report missing — suite crashed"
