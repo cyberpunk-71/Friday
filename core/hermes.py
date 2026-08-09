@@ -34,8 +34,20 @@ TASK_TRIGGERS = re.compile(
 class PreFire:
     """Speculative work started at t+0, consumed by the turn if wanted."""
     search: list[dict] = field(default_factory=list)
+    web: str = ""               # web-read snippet (e.g. BookMyShow events page)
     sandbox_warm: bool = False
     burned_usd: float = 0.0
+
+
+# typos / aliases for city names — "ahemedbad" must still search ahmedabad
+CITY_FIX = {
+    "ahemedbad": "ahmedabad", "ahmedbad": "ahmedabad", "amdavad": "ahmedabad",
+    "gandhinagar": "gandhinagar", "hydrabad": "hyderabad", "banglore": "bangalore",
+    "bengaluru": "bangalore", "delhi": "delhi", "mumbai": "mumbai", "pune": "pune",
+}
+EVENT_HINTS = re.compile(
+    r"\b(events?|concerts?|shows?|movies?|exhibition|festival|garba|dandiya|"
+    r"book ?my ?show|bookmyshow|what'?s on|happening|upcoming|nightlife)\b", re.I)
 
 
 class Hermes:
@@ -64,12 +76,33 @@ class Hermes:
             pf.burned_usd = 0.0001
         except Exception:
             pass
+        # events/movies/BookMyShow → also fetch the city's BMS events page so
+        # the model has REAL listings, not just news headlines
+        if EVENT_HINTS.search(text.lower()):
+            city = None
+            for c in ("ahmedabad", "gandhinagar", "mumbai", "delhi", "pune",
+                      "hyderabad", "bangalore", "chennai", "kolkata"):
+                if c in text.lower():
+                    city = c
+                    break
+            city = city or "ahmedabad"
+            try:
+                from .providers import web_read
+                pf.web = await web_read(f"https://in.bookmyshow.com/{city}/events", 6000)
+            except Exception:
+                pass
         return pf
 
     @staticmethod
     def _core_query(text: str) -> str:
-        t = re.sub(r"\b(hey|friday|please|pls|can you|could you|i want|i need|keep an eye on)\b",
+        t = re.sub(r"\b(hey|friday|please|pls|can you|could you|i want|i need|keep an eye on|"
+                   r"search (on|for|up)|look (for|up)|tell me|find me|show me)\b",
                    " ", text, flags=re.I)
+        # fix city typos/aliases
+        low = t.lower()
+        for bad, good in CITY_FIX.items():
+            if bad in low:
+                t = re.sub(rf"\b{bad}\b", good, t, flags=re.I)
         t = re.sub(r"\s+", " ", t).strip()
         return t[:160]
 

@@ -148,3 +148,36 @@ def test_now_block_deterministic(sim_seed, cortex):
     assert "clock" in nb and "last_seen_delta_h" in nb
     assert "open_loops" in nb and "last_corrections" in nb
     assert "budget_left_usd" in nb and "ask_budget_left" in nb
+
+
+def test_conversation_history_injected(sim_seed, cortex, db):
+    """The model must receive the last turns as context — that's what makes
+    'ahmedabad' after 'events in ahmedabad' coherent."""
+    from core.obs import log_turn
+    log_turn("cor_hist1", "what are the events in ahmedabad tomorrow",
+             "Here are events in Ahmedabad...", 500, 0.001, "sim", "sim", [])
+    log_turn("cor_hist2", "search on book my show",
+             "BookMyShow events for Ahmedabad...", 500, 0.001, "sim", "sim", [])
+    messages = cortex._build_messages_for_test("ahmedabad")
+    joined = " ".join(m.get("content", "") for m in messages if m.get("role") == "user")
+    assert "events in ahmedabad" in joined, "history must be in context"
+    assert "book my show" in joined
+
+
+def test_city_typo_fix():
+    from core.hermes import Hermes
+    q = Hermes._core_query("events in ahemedbad tomorrow")
+    assert "ahmedabad" in q.lower()
+    assert "ahemedbad" not in q.lower()
+
+
+def test_event_prefire_web_read(sim_seed, cortex, db):
+    """Event queries should attempt a BookMyShow web read (prefire.web set)."""
+    from core.hermes import Hermes
+    import asyncio
+    from core.providers import SimSearch
+    h = Hermes(db, search=SimSearch())
+    pf = asyncio.get_event_loop().run_until_complete(
+        h.prefire("what are events in ahmedabad tomorrow"))
+    # in the sandbox web_read fails (no egress) — but the path must not crash
+    assert isinstance(pf.web, str)

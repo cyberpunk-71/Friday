@@ -159,6 +159,7 @@ class Cortex:
         constraints = json.dumps(sense["constraints"], ensure_ascii=False)
         prefire = json.dumps(self.hermes.prefire_state.search if self.hermes.prefire_state else [],
                              ensure_ascii=False)
+        prefire_web = (self.hermes.prefire_state.web if self.hermes.prefire_state else "") or ""
         posture = self.psyche.posture()
         return (
             f"{self_md}\n\n## 12 VERBS (context, always cached)\n{verbs}\n\n"
@@ -167,7 +168,13 @@ class Cortex:
             f"## <SLOTS>{slots_json}</SLOTS>\n"
             f"## <NOW>{now_json}</NOW>\n"
             f"## CONSTRAINT LEDGER\n{constraints}\n"
+            f"## CONVERSATION MEMORY\n"
+            "- The user/assistant messages below ARE the conversation history. Use them "
+            "for context: if the user already said the city, the topic, or the time, "
+            "DO NOT ask again — continue from it.\n"
+            "- \"ahmedabad\" after \"events in ahmedabad\" means: the events in ahmedabad.\n"
             f"## SPECULATIVE PRE-FIRE (fetched at t+0 — real, current results)\n{prefire}\n"
+            f"## PREFIRE WEB SNIPPET (live page content — cite it)\n{prefire_web[:4000]}\n"
             "## LIVE-DATA RULE (mandatory)\n"
             "- The SPECULATIVE PRE-FIRE section holds live search results fetched for "
             "this query. USE and CITE them. NEVER say \"I don't have live access\" or "
@@ -189,6 +196,11 @@ class Cortex:
             "- Never ask a question your slots already answer. Never ask more than one "
             "question per turn. When the user says \"search X\" / \"look for X\", "
             "SEARCH X — do not interrogate them for city/type/time first.\n"
+            "- If the user already named a city or topic in an earlier message, that "
+            "context carries forward — use it, don't ask again.\n"
+            "- \"events\" after \"what events in ahmedabad\" = events in ahmedabad. "
+            "\"search on book my show\" = list BookMyShow events, from the "
+            "PREFIRE WEB SNIPPET if present.\n"
             "- Lead every reply with the ANSWER or the ACTION, then offer follow-ups "
             "only at the end if genuinely useful.")
 
@@ -207,13 +219,40 @@ class Cortex:
             parts.append(f.read_text(encoding="utf-8"))
         return "\n\n".join(parts)
 
+
+    def _build_messages_for_test(self, text: str) -> list[dict]:
+        """Test hook: build the message list exactly like _stream does."""
+        sense = self.loom.recall(text, k=3)
+        sense["now"] = self.loom.now_block()
+        sense["constraints"] = sense.get("constraints", [])
+        sys_p = self._system_prompt(sense)
+        messages = [{"role": "system", "content": sys_p}]
+        hist = self.db.q("SELECT user_text, reply FROM turns ORDER BY turn_id DESC LIMIT 8")
+        hist.reverse()
+        for h in hist:
+            if h["user_text"] and h["reply"]:
+                messages.append({"role": "user", "content": (h["user_text"] or "")[:800]})
+                messages.append({"role": "assistant", "content": (h["reply"] or "")[:1200]})
+        messages.append({"role": "user", "content": text[:4000]})
+        return messages
+
     async def _stream(self, text: str, sense: dict, corr_id: str,
                       book_id: int | None = None) -> AsyncIterator[dict]:
         sys_p = self._system_prompt(sense)
         messages = [
             {"role": "system", "content": sys_p},
-            {"role": "user", "content": text[:4000]},
         ]
+        # ---- conversation history: the last 8 turns (context memory) ----
+        # This is what makes "ahmedabad" after "events in ahmedabad" coherent.
+        hist = self.db.q(
+            "SELECT user_text, reply FROM turns "
+            "ORDER BY turn_id DESC LIMIT 8")
+        hist.reverse()
+        for h in hist:
+            if h["user_text"] and h["reply"]:
+                messages.append({"role": "user", "content": (h["user_text"] or "")[:800]})
+                messages.append({"role": "assistant", "content": (h["reply"] or "")[:1200]})
+        messages.append({"role": "user", "content": text[:4000]})
         buffer, ctrl, prose_started = "", None, False
         stream = self.llm.stream(
             messages, temperature=cfg.get("speak.temperature", 0.6),
