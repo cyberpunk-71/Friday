@@ -830,12 +830,35 @@ async def health():
 
 
 @app.get("/api/admin/searchtest")
-async def searchtest(q: str = "events in ahmedabad today", _: bool = Depends(_admin_auth)):
+async def searchtest(q: str = "events in ahmedabad today", debug: bool = False,
+                     _: bool = Depends(_admin_auth)):
     """Live-search self-test: proves real web search works from this host.
-    Reports per-provider errors so blocked domains are diagnosable."""
+    Reports per-provider errors so blocked domains are diagnosable.
+    debug=true also returns raw response samples to debug parsers."""
     import asyncio as _aio
-    from .providers import (BingSearch, DuckDuckGoSearch, GoogleNewsRSS,
-                            SimSearch)
+    import httpx as _httpx
+    from .providers import (BingSearch, DuckDuckGoSearch, GoogleNewsRSS)
+
+    if debug:
+        # raw probes: status + first bytes of each provider's response
+        async def raw(name, url, **kw):
+            try:
+                async with _httpx.AsyncClient(timeout=15, follow_redirects=True,
+                                              headers={"User-Agent": DuckDuckGoSearch.UA}) as c:
+                    r = await c.get(url, **kw) if kw.get("params") else await c.post(url, data={"q": q})
+                    return {"provider": name, "status": r.status_code,
+                            "len": len(r.text),
+                            "sample": r.text[:400].replace("\n", " ")}
+            except Exception as e:
+                return {"provider": name, "error": str(e)[:150]}
+
+        res = await _aio.gather(
+            raw("DDG-html", "https://html.duckduckgo.com/html/", params=None),
+            raw("Bing", "https://www.bing.com/search", params={"q": q}),
+            raw("GoogleNews", "https://news.google.com/rss/search",
+                params={"q": q, "hl": "en-IN", "gl": "IN", "ceid": "IN:en"}),
+        )
+        return {"debug": True, "query": q, "raw": res}
 
     async def try_prov(prov, name):
         try:
