@@ -175,6 +175,13 @@ class Cortex:
             "- For anything live (events, prices, schedules, news, people in office): "
             "answer FROM the pre-fire results, not from memory. If pre-fire is empty "
             "and the query needs live data, set code_intent=true so FORGE runs a real search.\n"
+            "## ANTI-FABRICATION (mandatory — fabricated answers are a BUG)\n"
+            "- NEVER invent events, shows, prices, schedules, phone numbers, or URLs. "
+            "If the pre-fire results do not contain the answer, say plainly: \"I couldn't "
+            "find live listings for that\" and offer what you CAN confirm, or suggest a "
+            "specific search. A plausible-looking invented event is the worst possible answer.\n"
+            "- If results are marked \"[fixture]\" they are NOT live — say so and do not "
+            "present them as real.\n"
             "## QUESTION DISCIPLINE (mandatory — this is an irritation blocker)\n"
             "- Ask Budget: 2 clarifying questions per DAY. Prefer assuming: pick the "
             "sensible default from the slots (city = user's home, time = now, type = "
@@ -438,6 +445,54 @@ class Cortex:
         return None
 
     # ------------------------------------------------------------------ #
+    # deterministic config ingress — theme & feedback commands fire from the
+    # USER TEXT, not from the model's (unreliable) ⟨CTRL⟩ config_deltas.
+    # This is why "light mode" works even when the model ignores the JSON.
+    # ------------------------------------------------------------------ #
+    def _config_ingress(self, text: str) -> dict | None:
+        """Returns {deltas, reply} if the message is a config command,
+        else None. Also handles 'it hasn't changed' follow-ups."""
+        low = text.lower()
+        deltas: dict = {}
+        reply = None
+
+        # theme commands (also catches typos: 'ligh mode', 'darkm ode')
+        if re.search(r"(dark|black)\s*mode|darkm", low) or re.search(r"\bdark\b", low) and "mode" in low:
+            deltas["ui.theme"] = "dark"
+            reply = "Done — dark mode is on 🖤"
+        elif re.search(r"(light|white)\s*mode|lightm", low) or ("light" in low and "mode" in low):
+            deltas["ui.theme"] = "light"
+            reply = "Done — light mode is on ☀️"
+        # follow-ups: theme didn't visibly change → re-apply + tell them to refresh
+        elif re.search(r"(hasn'?t|not|never|didn'?t|still|no)\s*(changed|switched|working|applied)|not switched", low) and len(low) < 80:
+            cur = self.db.get_setting("ui.theme", "dark")
+            deltas["ui.theme"] = cur
+            reply = (f"Theme is set to {cur} on the server. If the page still looks the same, "
+                     "do a hard refresh (Ctrl+Shift+R) — the old CSS may be cached.")
+        # feedback commands
+        if "nudg" in low and any(x in low for x in ("too many", "many", "less", "fewer", "don't like", "dont like", "stop")):
+            deltas["focus.nudge_cooldown_min"] = 30
+            reply = "Got it — nudges reduced to 1 per 30 minutes per kind."
+        if "hinglish" in low and any(x in low for x in ("don't like", "dont like", "no", "stop", "avoid", "not")):
+            deltas["style.hinglish_ratio"] = 0.0
+            reply = "Understood — I'll reply in pure English from now on."
+        if re.search(r"(keep|make|replies?).{0,12}(short|concise)|long replies|too long", low):
+            deltas["style.concise"] = True
+            reply = "Got it — shorter replies from now on."
+        if "stop phone" in low or ("phone" in low and "focus" in low and any(x in low for x in ("stop", "off", "block", "no"))):
+            deltas["focus.nudge_channels.phone"] = False
+            reply = "Done — phone notifications off for focus only."
+
+        if not deltas:
+            return None
+        return {"deltas": deltas, "reply": reply}
+
+    def _apply_deltas(self, deltas: dict) -> None:
+        for key, value in deltas.items():
+            self.db.set_setting(key, value)
+            cfg.set_live_value(key, value)
+
+    # ------------------------------------------------------------------ #
     # public turn API
     # ------------------------------------------------------------------ #
     async def turn(self, text: str, book_id: int | None = None,
@@ -476,6 +531,27 @@ class Cortex:
             yield {"type": "done", "reply": focus_event["message"], "latency_ms": 2,
                    "cost_usd": 0.0, "corr_id": corr_id, "model": "deterministic",
                    "slots_used": 0}
+            return
+        # ---- deterministic config ingress (0 LLM) — theme/feedback commands
+        # short-circuit so they ALWAYS work, even if the model misbehaves
+        cfg_cmd = self._config_ingress(text)
+        if cfg_cmd:
+            self._apply_deltas(cfg_cmd["deltas"])
+            ctrl_out = {"depth": 0.1, "tooliness": 0.0, "emotionality": 0.0,
+                        "novelty": 0.2, "stakes": 0.0,
+                        "config_deltas": cfg_cmd["deltas"], "memory_writes": [],
+                        "code_intent": False, "ask": []}
+            yield {"type": "ctrl", "ctrl": ctrl_out}
+            yield {"type": "delta", "text": cfg_cmd["reply"]}
+            yield {"type": "card", "card": {"type": "theme",
+                                            "theme": cfg_cmd["deltas"].get("ui.theme", "")}}
+            yield {"type": "done", "reply": cfg_cmd["reply"], "latency_ms": 2,
+                   "cost_usd": 0.0, "corr_id": corr_id, "model": "deterministic",
+                   "slots_used": 0}
+            # SETTLE (record the turn in the river + audit) — light sense
+            await asyncio.to_thread(self._settle, text, corr_id, book_id,
+                                    {"slots": [], "now": self.loom.now_block()},
+                                    ctrl_out, cfg_cmd["reply"], 2, 0.0, None)
             return
         # reminder creation — deterministic so "remind me at 14:00" never misses
         reminder_event = self._reminder_ingress(text)

@@ -476,7 +476,48 @@ class SimSearch(SearchProvider):
         if not out:
             out = [{"title": f"Sim result for {query}", "url": "https://sim.local/1",
                     "snippet": "Simulated offline result (configure a search key on the VM for live results)."}]
+        for r in out:
+            r["fixture"] = True
         return out[:max_results]
+
+
+class GoogleNewsRSS(SearchProvider):
+    """Keyless live news/events search via Google News RSS — extremely
+    permissive egress (works behind most firewalls), returns real headlines
+    with dates and links."""
+
+    async def search(self, query: str, max_results: int = 6) -> list[dict]:
+        url = "https://news.google.com/rss/search"
+        params = {"q": query, "hl": "en-IN", "gl": "IN", "ceid": "IN:en"}
+        try:
+            async with httpx.AsyncClient(timeout=12, follow_redirects=True) as c:
+                r = await c.get(url, params=params)
+                if r.status_code == 200:
+                    items = self._parse(r.text, max_results)
+                    if items:
+                        return items
+        except Exception:
+            pass
+        return []
+
+    @staticmethod
+    def _parse(xml: str, max_results: int) -> list[dict]:
+        import xml.etree.ElementTree as ET
+        out = []
+        try:
+            root = ET.fromstring(xml)
+        except Exception:
+            return []
+        ns = {"m": "http://www.w3.org/2005/Atom"}
+        for item in root.findall(".//m:item", ns)[:max_results]:
+            title = item.findtext("m:title", "", ns)
+            link = item.findtext("m:link", "", ns)
+            date = item.findtext("m:pubDate", "", ns)
+            src = item.findtext("m:source", "", ns)
+            if title and link:
+                snip = f"{src} · {date}" if (src or date) else ""
+                out.append({"title": title[:200], "url": link, "snippet": snip[:300]})
+        return out
 
 
 class DuckDuckGoSearch(SearchProvider):
@@ -488,9 +529,9 @@ class DuckDuckGoSearch(SearchProvider):
           "(KHTML, like Gecko) Chrome/126.0 Safari/537.36")
 
     async def search(self, query: str, max_results: int = 6) -> list[dict]:
+        # live chain: DDG html → DDG lite → Google News RSS → sim fixtures
         async with httpx.AsyncClient(timeout=12, follow_redirects=True,
                                      headers={"User-Agent": self.UA}) as c:
-            # try html endpoint first, then lite
             try:
                 r = await c.post("https://html.duckduckgo.com/html/", data={"q": query})
                 if r.status_code == 200:
@@ -507,8 +548,17 @@ class DuckDuckGoSearch(SearchProvider):
                         return out
             except Exception:
                 pass
-        # graceful degradation → deterministic fixtures
-        return await SimSearch().search(query, max_results)
+        try:
+            out = await GoogleNewsRSS().search(query, max_results)
+            if out:
+                return out
+        except Exception:
+            pass
+        # graceful degradation → deterministic fixtures (marked not-live)
+        sim = await SimSearch().search(query, max_results)
+        for s in sim:
+            s["fixture"] = True
+        return sim
 
     @staticmethod
     def _clean(h: str) -> str:

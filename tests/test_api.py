@@ -43,10 +43,12 @@ def test_chat_sse_full_contract(client, db):
         assert r.status_code == 200
         events = _sse_events(r.read().decode())
     types = [e["type"] for e in events]
-    assert "sense" in types and "ctrl" in types and "delta" in types and "done" in types
+    # dark mode = deterministic config ingress (no LLM); ctrl deltas + card
+    assert "ctrl" in types and "delta" in types and "done" in types
     done = next(e for e in events if e["type"] == "done")
     assert done["reply"] and "cost_usd" in done and "latency_ms" in done
     assert db.get_setting("ui.theme") == "dark"
+    assert any(e["type"] == "card" and e["card"]["type"] == "theme" for e in events)
 
 
 def test_provider_key_via_chat(client, db):

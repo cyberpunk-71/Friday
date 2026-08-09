@@ -70,12 +70,16 @@ def _run(coro):
 def test_turn_dark_mode(sim_seed, cortex, db):
     events = collect(cortex.turn("dark mode kar do"))
     types = [e["type"] for e in events]
-    assert "sense" in types and "ctrl" in types and "delta" in types and "done" in types
+    # deterministic config ingress: ctrl (with deltas) + theme card + done —
+    # no LLM needed, and sense may be skipped on this path
+    assert "ctrl" in types and "delta" in types and "done" in types
     ctrl = next(e["ctrl"] for e in events if e["type"] == "ctrl")
     assert ctrl["config_deltas"]["ui.theme"] == "dark"
     assert db.get_setting("ui.theme") == "dark"
     done = next(e for e in events if e["type"] == "done")
     assert "dark" in done["reply"].lower()
+    # and the card tells the UI to flip
+    assert any(e["type"] == "card" and e["card"]["type"] == "theme" for e in events)
 
 
 def test_turn_memory_write_lands_in_river(sim_seed, cortex, db):

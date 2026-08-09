@@ -827,3 +827,17 @@ async def health():
             "model": os.environ.get("DEEPSEEK_MODEL", "deepseek-chat"),
             "time": time.time(),
             "atoms": db.q1("SELECT COUNT(*) c FROM atoms")["c"]}
+
+
+@app.get("/api/admin/searchtest")
+async def searchtest(q: str = "events in ahmedabad today", _: bool = Depends(_admin_auth)):
+    """Live-search self-test: proves real web search works from this host."""
+    from .providers import make_search
+    s = make_search()
+    try:
+        res = await s.search(q, 5)
+        return {"ok": True, "provider": s.__class__.__name__, "query": q,
+                "results": [{**r, "snippet": r.get("snippet", "")[:120]} for r in res[:5]],
+                "live": not any(r.get("fixture") for r in res)}
+    except Exception as e:
+        return {"ok": False, "provider": s.__class__.__name__, "error": str(e)[:200]}
