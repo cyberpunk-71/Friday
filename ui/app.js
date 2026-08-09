@@ -832,6 +832,17 @@ function applyTheme(t) { document.documentElement.dataset.theme = t; }
 /* ============================== boot ============================== */
 (async function boot() {
   setInterval(pollOverview, 10000);
+  // offline-sandbox banner: show when the server has no LLM key configured
+  try {
+    const ov = await api("/api/admin/overview");
+    if (ov.llm_provider && String(ov.llm_provider).includes("sim")) {
+      const b = $("#offline-banner");
+      b.classList.remove("hidden");
+      $("#offline-banner-link").textContent = "https://copyrighted-recognition-plane-undertake.trycloudflare.com";
+      $("#offline-banner-link").style.cursor = "pointer";
+      $("#offline-banner-link").onclick = () => location.href = "https://copyrighted-recognition-plane-undertake.trycloudflare.com";
+    }
+  } catch (e) {}
   setInterval(async () => {           // keep focus state fresh for the sensor
     try {
       const a = await api("/api/focus/active");

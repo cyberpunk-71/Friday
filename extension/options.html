@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Friday Sensor — Options</title>
+<style>body{font-family:system-ui;background:#0b0e14;color:#e8ecf4;padding:20px;max-width:480px;margin:0 auto}
+h3{margin:0 0 12px}label{display:block;margin:10px 0;font-size:14px}
+input[type=text]{width:100%;box-sizing:border-box;padding:8px;border-radius:8px;border:1px solid #232b3d;background:#11151f;color:#e8ecf4;font-size:14px}
+button{width:100%;padding:10px;margin-top:14px;border:none;border-radius:8px;background:#6ea8ff;color:#0b0e14;font-weight:700;cursor:pointer;font-size:14px}
+#status{font-size:13px;color:#8b94a7;margin-top:10px}
+.dim{color:#8b94a7;font-size:12px}</style></head>
+<body>
+<h3>🎯 Friday Sensor — Options</h3>
+<label>Server URL
+  <input type="text" id="server" placeholder="https://your-friday.trycloudflare.com"/>
+</label>
+<label><input type="checkbox" id="observeAll" checked/> Learn every page I visit</label>
+<label><input type="checkbox" id="focusNudges" checked/> Nudge me during focus</label>
+<label><input type="checkbox" id="chromeNudges" checked/> Chrome notifications</label>
+<label><input type="checkbox" id="voiceNudges" checked/> Voice nudges</label>
+<button id="save">Save</button>
+<div id="status"></div>
+<div class="dim" style="margin-top:14px">Server URL = the Friday link you open in the browser (the trycloudflare.com one).</div>
+<script src="options.js"></script>
+</body>
+</html>
