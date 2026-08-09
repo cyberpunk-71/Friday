@@ -862,7 +862,7 @@ async def searchtest(q: str = "events in ahmedabad today", debug: bool = False,
              {"q": q, "hl": "en-IN", "gl": "IN", "ceid": "IN:en"}),
         ]
         if provider:
-            targets = [t for t in targets if t[0].lower() == _provider.lower()]
+            targets = [t for t in targets if t[0].lower() == provider.lower()]
         res = await _aio.gather(*[raw(*t) for t in targets])
         return {"debug": True, "query": q, "raw": res}
 
