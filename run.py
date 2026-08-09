@@ -1,3 +1,4 @@
+from __future__ import annotations
 #!/usr/bin/env python3
 """Friday entrypoint: uvicorn core.app:app --host 0.0.0.0 --port 8000"""
 import os

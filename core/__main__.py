@@ -1,3 +1,4 @@
+from __future__ import annotations
 """python -m core.worker — background SETTLE process (VM systemd unit)."""
 import asyncio
 import os

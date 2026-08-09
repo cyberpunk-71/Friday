@@ -8,11 +8,25 @@ WS="$(pwd)"
 RUNTIME=/opt/friday
 SVC=friday-core
 WORKER=friday-worker
-PORT=8000
+PORT=8010
 PUBLIC_IP="${PUBLIC_IP:-80.225.211.198}"
 RESULT_FILE=vm_diagnostics/manual/latest.json
 OUT=""
 exit_code=0
+
+PKG=""
+if command -v dnf >/dev/null 2>&1; then PKG=dnf; elif command -v yum >/dev/null 2>&1; then PKG=yum; elif command -v apt-get >/dev/null 2>&1; then PKG=apt-get; fi
+
+pkg_install() {
+  # $1 = package name(s)
+  if [ -z "$PKG" ]; then say "no package manager found"; return 1; fi
+  if [ "$PKG" = "apt-get" ]; then
+    sudo apt-get update -qq 2>&1 | tail -1
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$@" 2>&1 | tail -2
+  else
+    sudo "$PKG" install -y -q "$@" 2>&1 | tail -2
+  fi
+}
 
 say()  { OUT="${OUT}${1}\n"; echo "$1"; }
 log()  { say "================ op: $1 ================"; }
@@ -89,26 +103,39 @@ op_friday_setkey() {
 
 op_friday_deploy() {
   log friday_deploy
-  if [ ! -d "$WS/core" ]; then fail friday_deploy; say "no friday sources in workspace"; return; fi
-  sudo mkdir -p "$RUNTIME" && sudo chown -R "$(whoami)" "$RUNTIME" || true
-  # rsync everything except the protected paths (cp -a fallback if rsync missing)
-  if command -v rsync >/dev/null 2>&1; then
-    rsync -a --exclude '.git' --exclude '.env' --exclude 'data' --exclude 'backups' \
-          --exclude '.venv' --exclude 'models' --exclude '__pycache__' \
-          --exclude '.pytest_cache' --exclude 'vm_diagnostics' --exclude '*.zip' \
-          "$WS"/ "$RUNTIME"/ || { fail friday_deploy; return; }
-  else
-    cp -a "$WS"/. "$RUNTIME"/ 2>/dev/null
-    rm -rf "$RUNTIME/.git" "$RUNTIME/.env" "$RUNTIME/data" "$RUNTIME/backups" \
-           "$RUNTIME/.venv" "$RUNTIME/models" "$RUNTIME/vm_diagnostics" 2>/dev/null
-    find "$RUNTIME" -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null || true
-  fi
-  # first-run .env bootstrap (owner-managed after that; never overwritten)
+  if [ ! -d "$WS/core" ]; then fail friday_deploy; say "no friday sources in workspace ($WS)"; ls "$WS" | head -5 | while read -r l; do say "  ws: $l"; done; return; fi
+  say "workspace: $WS"
+  say "os: $(grep -E '^(NAME|VERSION)=' /etc/os-release 2>/dev/null | tr '\n' ' ')"
+  say "python: $(python3 --version 2>&1)  pkg: ${PKG:-none}"
+  sudo mkdir -p "$RUNTIME" || { fail friday_deploy; say "mkdir $RUNTIME failed"; return; }
+  sudo chown -R "$(whoami)" "$RUNTIME" 2>/dev/null || true
+  # copy code — plain cp (no rsync dependency), VERBOSE on failure
+  rm -rf "$RUNTIME/core" "$RUNTIME/ui" "$RUNTIME/configs" "$RUNTIME/tests" \
+         "$RUNTIME/requirements.txt" "$RUNTIME/run.py" "$RUNTIME/.env.example" \
+         "$RUNTIME/infra" "$RUNTIME/scripts" 2>/dev/null
+  cp -a "$WS/core" "$WS/ui" "$WS/configs" "$WS/tests" "$WS/requirements.txt" \
+        "$WS/run.py" "$WS/.env.example" "$WS/infra" "$WS/scripts" "$RUNTIME"/ 2>&1 | tail -3 || { fail friday_deploy; say "copy FAILED"; return; }
+  rm -rf "$RUNTIME/genome/.git" 2>/dev/null || true
+  if [ ! -f "$RUNTIME/requirements.txt" ]; then fail friday_deploy; say "requirements.txt MISSING after copy"; return; fi
+  say "code copied: $(ls "$RUNTIME" | tr '\n' ' ')"
+  # .env bootstrap
   if [ ! -f "$RUNTIME/.env" ]; then cp "$RUNTIME/.env.example" "$RUNTIME/.env"; fi
-  # venv + deps (best-effort)
-  if [ ! -d "$RUNTIME/.venv" ]; then python3 -m venv "$RUNTIME/.venv"; fi
-  "$RUNTIME/.venv/bin/pip" install -q --upgrade pip 2>/dev/null || true
-  "$RUNTIME/.venv/bin/pip" install -q -r "$RUNTIME/requirements.txt" 2>&1 | tail -3 || true
+  grep -q "^FRIDAY_PORT=" "$RUNTIME/.env" 2>/dev/null || echo "FRIDAY_PORT=$PORT" >> "$RUNTIME/.env"
+  grep -q "^DEEPSEEK_MODEL=" "$RUNTIME/.env" 2>/dev/null || echo "DEEPSEEK_MODEL=deepseek-chat" >> "$RUNTIME/.env"
+  # venv + deps
+  if [ ! -d "$RUNTIME/.venv" ]; then
+    command -v python3-venv >/dev/null 2>&1 || pkg_install python3-venv python3-pip 2>/dev/null || true
+    python3 -m venv "$RUNTIME/.venv" 2>&1 | tail -1 || true
+  fi
+  if [ ! -x "$RUNTIME/.venv/bin/python" ]; then fail friday_deploy; say "venv creation failed"; return; fi
+  say "venv: $("$RUNTIME/.venv/bin/python" --version 2>&1)"
+  "$RUNTIME/.venv/bin/pip" install -q --upgrade pip 2>&1 | tail -1 || true
+  for attempt in 1 2 3; do
+    if "$RUNTIME/.venv/bin/pip" install -q -r "$RUNTIME/requirements.txt" 2>&1 | tail -2; then break; fi
+    say "pip attempt $attempt failed — retry"
+    sleep 5
+  done
+  "$RUNTIME/.venv/bin/python" -c "import fastapi, uvicorn, httpx; print('imports OK')" 2>&1 | tail -1
   # systemd units
   cat > /tmp/friday-core.service <<UNIT
 [Unit]
@@ -150,7 +177,7 @@ UNIT
     ok friday_deploy
   else
     say "health failed; journal:"
-    sudo journalctl -u "$SVC" -n 25 --no-pager 2>/dev/null | tail -25 | while read -r l; do say "$l"; done
+    sudo journalctl -u "$SVC" -n 30 --no-pager 2>/dev/null | tail -30 | while read -r l; do say "$l"; done
     fail friday_deploy
   fi
 }
@@ -177,15 +204,10 @@ op_friday_test() {
 
 op_friday_nginx() {
   log friday_nginx
-  # nginx may not be installed on a fresh VM — install it
+  # nginx may not be installed on a fresh VM — install it (dnf/yum/apt)
   if ! command -v nginx >/dev/null 2>&1; then
-    say "nginx not found — installing…"
-    if command -v apt-get >/dev/null 2>&1; then
-      sudo apt-get update -qq 2>&1 | tail -1
-      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nginx 2>&1 | tail -2
-    elif command -v yum >/dev/null 2>&1; then
-      sudo yum install -y -q nginx 2>&1 | tail -2
-    fi
+    say "nginx not found — installing via ${PKG:-unknown}"
+    pkg_install nginx
   fi
   if ! command -v nginx >/dev/null 2>&1; then
     say "nginx install FAILED — cannot expose nip.io URL"
@@ -215,9 +237,14 @@ server {
     }
 }
 NGINX
-  sudo mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled /etc/nginx/conf.d
-  sudo cp /tmp/friday-nginx.conf /etc/nginx/sites-available/friday
-  sudo ln -sf /etc/nginx/sites-available/friday /etc/nginx/sites-enabled/friday
+  # Oracle Linux nginx uses /etc/nginx/conf.d; Debian uses sites-enabled
+  if [ -d /etc/nginx/conf.d ]; then
+    sudo cp /tmp/friday-nginx.conf /etc/nginx/conf.d/friday.conf
+  else
+    sudo mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled
+    sudo cp /tmp/friday-nginx.conf /etc/nginx/sites-available/friday
+    sudo ln -sf /etc/nginx/sites-available/friday /etc/nginx/sites-enabled/friday
+  fi
   sudo nginx -t 2>&1 | while read -r l; do say "$l"; done
   sudo systemctl enable nginx 2>/dev/null || true
   sudo systemctl restart nginx 2>/dev/null || sudo nginx 2>/dev/null || true

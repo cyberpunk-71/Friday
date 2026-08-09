@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """Report vm_diagnostics/manual/latest.json to the repo via the GitHub
 contents API. Used by the vm-ops workflow.
 
