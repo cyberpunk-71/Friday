@@ -157,6 +157,21 @@ op_friday_test() {
 
 op_friday_nginx() {
   log friday_nginx
+  # nginx may not be installed on a fresh VM — install it
+  if ! command -v nginx >/dev/null 2>&1; then
+    say "nginx not found — installing…"
+    if command -v apt-get >/dev/null 2>&1; then
+      sudo apt-get update -qq 2>&1 | tail -1
+      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nginx 2>&1 | tail -2
+    elif command -v yum >/dev/null 2>&1; then
+      sudo yum install -y -q nginx 2>&1 | tail -2
+    fi
+  fi
+  if ! command -v nginx >/dev/null 2>&1; then
+    say "nginx install FAILED — cannot expose nip.io URL"
+    fail friday_nginx; return
+  fi
+  say "nginx: $(nginx -v 2>&1)"
   cat > /tmp/friday-nginx.conf <<NGINX
 server {
     listen 80;
@@ -180,11 +195,12 @@ server {
     }
 }
 NGINX
-  sudo mkdir -p /etc/nginx/sites-available
+  sudo mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled /etc/nginx/conf.d
   sudo cp /tmp/friday-nginx.conf /etc/nginx/sites-available/friday
   sudo ln -sf /etc/nginx/sites-available/friday /etc/nginx/sites-enabled/friday
   sudo nginx -t 2>&1 | while read -r l; do say "$l"; done
-  sudo systemctl reload nginx 2>/dev/null || sudo nginx -s reload 2>/dev/null || true
+  sudo systemctl enable nginx 2>/dev/null || true
+  sudo systemctl restart nginx 2>/dev/null || sudo nginx 2>/dev/null || true
   code=$(curl -s -o /dev/null -w '%{http_code}' -H "Host: friday.${PUBLIC_IP}.nip.io" http://127.0.0.1/ 2>/dev/null)
   say "nip.io_check=friday.${PUBLIC_IP}.nip.io -> $code"
   if [ "$code" = "200" ]; then ok friday_nginx; else fail friday_nginx; fi
@@ -197,6 +213,30 @@ op_friday_diagnose() {
   sudo journalctl -u "$SVC" -n 30 --no-pager 2>/dev/null | tail -30 | while read -r l; do say "$l"; done
   say "disk: $(du -sh ${RUNTIME}/data 2>/dev/null || echo missing)"
   if health_ok; then ok friday_diagnose; else fail friday_diagnose; fi
+}
+
+op_friday_netcheck() {
+  log friday_netcheck
+  say "=== DNS ==="
+  getent hosts api.deepseek.com 2>/dev/null | head -2 | while read -r l; do say "$l"; done || say "deepseek DNS: FAILED"
+  getent hosts pypi.org 2>/dev/null | head -1 | while read -r l; do say "pypi: $l"; done
+  say "resolv.conf: $(grep -c nameserver /etc/resolv.conf 2>/dev/null) nameservers"
+  say "=== egress probes (10s timeout each) ==="
+  for host in https://pypi.org https://github.com https://api.deepseek.com https://api.tavily.com https://r.jina.ai https://www.google.com; do
+    t0=$(date +%s)
+    code=$(curl -s -o /dev/null -w '%{http_code}' -m 10 "$host" 2>&1) || code="ERR:${code}"
+    t1=$(date +%s)
+    say "$host -> $code ($((t1-t0))s)"
+  done
+  say "=== TLS detail to deepseek ==="
+  curl -sv -m 12 https://api.deepseek.com/ 2>&1 | grep -E "Connected|SSL|TLS|error|refused|timed" | head -6 | while read -r l; do say "$l"; done
+  say "=== proxy env ==="
+  env | grep -iE "proxy" | head -5 | while read -r l; do say "$l"; done || say "no proxy vars"
+  say "=== iptables (filter) ==="
+  sudo iptables -S 2>/dev/null | head -25 | while read -r l; do say "$l"; done || say "iptables: not readable"
+  say "=== listening ports ==="
+  ss -ltn 2>/dev/null | head -10 | while read -r l; do say "$l"; done
+  ok friday_netcheck
 }
 
 op_friday_remove() {
@@ -225,6 +265,7 @@ case "$CMD" in
   friday_test)        run_ops friday_test ;;
   friday_nginx)       run_ops friday_nginx ;;
   friday_diagnose)    run_ops friday_diagnose ;;
+  friday_netcheck)    run_ops friday_netcheck ;;
   friday_remove)      run_ops friday_remove ;;
   friday_all)         run_ops friday_deploy friday_test friday_health friday_nginx ;;
   *) echo "unknown command: $CMD"; exit 2 ;;
