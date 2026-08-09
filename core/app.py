@@ -831,13 +831,29 @@ async def health():
 
 @app.get("/api/admin/searchtest")
 async def searchtest(q: str = "events in ahmedabad today", _: bool = Depends(_admin_auth)):
-    """Live-search self-test: proves real web search works from this host."""
-    from .providers import make_search
-    s = make_search()
-    try:
-        res = await s.search(q, 5)
-        return {"ok": True, "provider": s.__class__.__name__, "query": q,
-                "results": [{**r, "snippet": r.get("snippet", "")[:120]} for r in res[:5]],
-                "live": not any(r.get("fixture") for r in res)}
-    except Exception as e:
-        return {"ok": False, "provider": s.__class__.__name__, "error": str(e)[:200]}
+    """Live-search self-test: proves real web search works from this host.
+    Reports per-provider errors so blocked domains are diagnosable."""
+    import asyncio as _aio
+    from .providers import (BingSearch, DuckDuckGoSearch, GoogleNewsRSS,
+                            SimSearch)
+
+    async def try_prov(prov, name):
+        try:
+            res = await _aio.wait_for(prov.search(q, 5), timeout=15)
+            live = [r for r in res if not r.get("fixture")]
+            if live:
+                return {"provider": name, "ok": True, "live": True,
+                        "results": [{**r, "snippet": r.get("snippet", "")[:120]} for r in live[:3]]}
+            return {"provider": name, "ok": True, "live": False,
+                    "error": "fell through to fixtures"}
+        except Exception as e:
+            return {"provider": name, "ok": False, "error": str(e)[:150]}
+
+    results = await _aio.gather(
+        try_prov(DuckDuckGoSearch(), "DuckDuckGo"),
+        try_prov(BingSearch(), "Bing"),
+        try_prov(GoogleNewsRSS(), "GoogleNews"),
+    )
+    any_live = any(r.get("live") for r in results)
+    return {"ok": any_live, "query": q, "providers": results,
+            "live": any_live}

@@ -323,7 +323,7 @@ op_friday_netcheck() {
   say "=== iptables INPUT (policy + first rules) ==="
   sudo iptables -L INPUT -n --line-numbers 2>/dev/null | head -15 | while read -r l; do say "$l"; done || say "iptables not readable"
   say "=== egress probes (6s timeout) ==="
-  for host in http://api.ipify.org https://api.ipify.org https://pypi.org https://github.com https://api.deepseek.com https://api.github.com https://r.jina.ai; do
+  for host in http://api.ipify.org https://api.ipify.org https://pypi.org https://github.com https://api.deepseek.com https://api.github.com https://r.jina.ai https://html.duckduckgo.com https://duckduckgo.com https://www.bing.com https://news.google.com; do
     t0=$(date +%s)
     code=$(curl -s -o /dev/null -w '%{http_code}' -m 6 "$host" 2>&1) || code="ERR"
     t1=$(date +%s)
