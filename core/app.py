@@ -910,3 +910,20 @@ async def searchtest(q: str = "events in ahmedabad today", debug: bool = False,
     any_live = any(r.get("live") for r in results)
     return {"ok": any_live, "query": q, "providers": results,
             "live": any_live}
+
+
+@app.get("/api/admin/prefiretest")
+async def prefiretest(q: str = "what are events in ahmedabad tomorrow",
+                      _: bool = Depends(_admin_auth)):
+    """Direct pre-fire test: runs the REAL prefire() path (same code the chat
+    uses) and reports what it produced — n, titles, error."""
+    from .providers import make_search
+    from .hermes import Hermes
+    h = Hermes(get_db(), search=make_search())
+    pf = await h.prefire(q, city="ahmedabad")
+    return {"query": q,
+            "core_query": h._core_query(q, "ahmedabad"),
+            "n": len(pf.search),
+            "titles": [r.get("title", "")[:100] for r in pf.search[:5]],
+            "web_len": len(pf.web),
+            "error": pf.error}

@@ -65,11 +65,14 @@ class Hermes:
         pf = PreFire()
         max_usd = cfg.get("hermes.pre_fire_max_usd", 0.0002)
         if not LIVE_TRIGGERS.search(text):
+            pf.error = f"no live trigger in: {text[:80]!r}"
             return pf
         if not self.search:
+            pf.error = "search provider is None"
             return pf
         # cost of one speculative search ≈ $0.0001 (tokens) — burn only if budget allows
         if not self.governor_allows(pf.burned_usd + 0.0001):
+            pf.error = f"governor blocked (spend {self.spend_today():.4f})"
             return pf
         try:
             # strip the user's chatty bits; search the core question
