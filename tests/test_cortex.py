@@ -256,3 +256,12 @@ def test_tiny_followup_reuses_last_question(sim_seed, cortex, db):
     # query reused the last question instead of searching 'search'
     joined = " ".join(r["title"].lower() for r in pf.search)
     assert "ahmedabad" in joined or "weekend" in joined, joined
+
+
+def test_cortex_hermes_has_search_provider(db):
+    """Regression: Hermes must receive the resolved search provider, not the
+    raw constructor arg (which was None → pre-fire silently disabled)."""
+    from core.cortex import Cortex
+    c = Cortex(db)
+    assert c.search is not None, "cortex search provider must exist"
+    assert c.hermes.search is c.search, "hermes must share the resolved provider"

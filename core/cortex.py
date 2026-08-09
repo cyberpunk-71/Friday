@@ -90,11 +90,14 @@ class Cortex:
         self.db = db or get_db()
         self.river = River(self.db)
         self.loom = Loom(self.db)
-        self.hermes = Hermes(self.db, search)
+        # search MUST be resolved BEFORE Hermes is built — Hermes holds the
+        # search provider for the pre-fire (this was None for months, which
+        # silently disabled live search in the chat path!)
+        self.search = search or make_search()
+        self.hermes = Hermes(self.db, self.search)
         self.psyche = Psyche(self.db)
         self.heart = Heart(self.db)
         self.llm = llm or make_llm()
-        self.search = search or make_search()
         # FRIDAY-Δ: extraction is FUSED into the ⟨CTRL⟩ memory_writes of the
         # one streaming call — no separate SETTLE LLM call per turn. The river
         # heuristic extractor (0 LLM) handles the deterministic fallback.
