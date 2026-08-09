@@ -285,7 +285,8 @@ class SimProvider(LLMProvider):
         patterns = [
             (r"dentist", r"dentist|appointment",
              lambda s: (f"No clash: the yatra window ends 15 Aug and your dentist "
-                        f"appointment is {s['text'].split('is')[-1].strip()}. I also set up a tracker on the portal.")),
+                        f"appointment is {_after_marker(s['text'], ['on '])} — 10 days after the yatra. "
+                        "I also set up a tracker on the portal.")),
             (r"salary|credited|credit", r"salary|1st",
              lambda s: ("Your salary credits on the 1st — so order after the 1st. "
                         "Here's the comparison table (Moto G85 ₹17,999 vs Redmi Note 14 ₹18,999) "
@@ -367,6 +368,16 @@ def make_llm() -> LLMProvider:
     if key:
         return DeepSeekProvider(api_key=key)
     return SimProvider()
+
+
+def _after_marker(text: str, markers: list[str]) -> str:
+    low = text
+    best = text.strip()
+    for m in markers:
+        idx = low.rfind(m)
+        if idx >= 0:
+            best = text[idx + len(m):].strip()
+    return best or text.strip()
 
 
 # --------------------------------------------------------------------------- #
