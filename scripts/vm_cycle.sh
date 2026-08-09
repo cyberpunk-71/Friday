@@ -122,6 +122,13 @@ op_friday_deploy() {
   if [ ! -f "$RUNTIME/.env" ]; then cp "$RUNTIME/.env.example" "$RUNTIME/.env"; fi
   grep -q "^FRIDAY_PORT=" "$RUNTIME/.env" 2>/dev/null || echo "FRIDAY_PORT=$PORT" >> "$RUNTIME/.env"
   grep -q "^DEEPSEEK_MODEL=" "$RUNTIME/.env" 2>/dev/null || echo "DEEPSEEK_MODEL=deepseek-chat" >> "$RUNTIME/.env"
+  # git is REQUIRED: checkout then does a full clone (with the auth token
+  # persisted), which enables the self-push result channel.
+  if ! command -v git >/dev/null 2>&1; then
+    say "git not found — installing"
+    pkg_install git
+  fi
+  say "git: $(git --version 2>&1)"
   # venv + deps
   if [ ! -d "$RUNTIME/.venv" ]; then
     command -v python3-venv >/dev/null 2>&1 || pkg_install python3-venv python3-pip 2>/dev/null || true
