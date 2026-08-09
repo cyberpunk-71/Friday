@@ -379,17 +379,22 @@ op_friday_tunnel() {
   log friday_tunnel
   # Cloudflare QUICK tunnel — outbound-only, no firewall/port-forward needed.
   # Egress is confirmed working (netcheck), so this bypasses the ingress block.
-  if [ ! -x /usr/local/bin/cloudflared ]; then
-    say "downloading cloudflared..."
-    ARCH=$(uname -m)
-    case "$ARCH" in
-      x86_64|amd64) CFARCH="amd64" ;;
-      aarch64|arm64) CFARCH="arm64" ;;
-      *) say "unknown arch $ARCH"; fail friday_tunnel; return ;;
-    esac
-    say "arch: $ARCH -> cloudflared-linux-${CFARCH}"
+  ARCH=$(uname -m)
+  case "$ARCH" in
+    x86_64|amd64) CFARCH="amd64" ;;
+    aarch64|arm64) CFARCH="arm64" ;;
+    *) say "unknown arch $ARCH"; fail friday_tunnel; return ;;
+  esac
+  say "arch: $ARCH -> cloudflared-linux-${CFARCH}"
+  # verify the existing binary actually runs; else (re)download the right arch
+  if ! /usr/local/bin/cloudflared --version >/dev/null 2>&1; then
+    say "downloading cloudflared (linux-${CFARCH})..."
     sudo curl -sL "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${CFARCH}" -o /usr/local/bin/cloudflared 2>&1 | tail -1 || true
     sudo chmod +x /usr/local/bin/cloudflared
+  fi
+  if ! /usr/local/bin/cloudflared --version >/dev/null 2>&1; then
+    say "cloudflared still broken"
+    fail friday_tunnel; return
   fi
   if [ ! -x /usr/local/bin/cloudflared ]; then
     say "cloudflared download FAILED"
