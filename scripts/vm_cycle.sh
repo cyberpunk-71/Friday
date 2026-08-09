@@ -351,6 +351,59 @@ op_friday_fix() {
   fi
 }
 
+op_friday_tunnel() {
+  log friday_tunnel
+  # Cloudflare QUICK tunnel — outbound-only, no firewall/port-forward needed.
+  # Egress is confirmed working (netcheck), so this bypasses the ingress block.
+  if [ ! -x /usr/local/bin/cloudflared ]; then
+    say "downloading cloudflared..."
+    sudo curl -sL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /usr/local/bin/cloudflared 2>&1 | tail -1 || true
+    sudo chmod +x /usr/local/bin/cloudflared
+  fi
+  if [ ! -x /usr/local/bin/cloudflared ]; then
+    say "cloudflared download FAILED"
+    fail friday_tunnel; return
+  fi
+  say "cloudflared: $(/usr/local/bin/cloudflared --version 2>&1 | head -1)"
+  # systemd unit so the tunnel persists
+  UNITFILE=/tmp/friday-tunnel.service
+  {
+    echo "[Unit]"
+    echo "Description=Friday Cloudflare quick tunnel"
+    echo "After=network.target friday-core.service"
+    echo "[Service]"
+    echo "Type=simple"
+    echo "User=$(whoami)"
+    echo "ExecStart=/usr/local/bin/cloudflared tunnel --url http://127.0.0.1:${PORT} --no-autoupdate"
+    echo "Restart=always"
+    echo "RestartSec=5"
+    echo "[Install]"
+    echo "WantedBy=multi-user.target"
+  } > "$UNITFILE"
+  sudo cp "$UNITFILE" /etc/systemd/system/friday-tunnel.service
+  sudo systemctl daemon-reload
+  sudo systemctl enable friday-tunnel 2>/dev/null
+  sudo systemctl restart friday-tunnel
+  # wait for the tunnel URL in the journal (quick tunnels print it on start)
+  URL=""
+  for i in $(seq 1 15); do
+    sleep 2
+    URL=$(sudo journalctl -u friday-tunnel -n 100 --no-pager 2>/dev/null | grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' | tail -1)
+    [ -n "$URL" ] && break
+  done
+  if [ -n "$URL" ]; then
+    say "TUNNEL_URL=${URL}"
+    echo "$URL" | sudo tee /opt/friday/tunnel_url >/dev/null 2>&1 || true
+    code=$(curl -s -o /dev/null -w '%{http_code}' -m 15 "${URL}/api/health" 2>/dev/null)
+    say "tunnel_health_check=${URL}/api/health -> ${code:-000}"
+    if [ "$code" = "200" ]; then ok friday_tunnel; else fail friday_tunnel; fi
+  else
+    say "no tunnel URL found in journal - last lines:"
+    sudo journalctl -u friday-tunnel -n 15 --no-pager 2>/dev/null | tail -15 | while read -r l; do say "$l"; done
+    fail friday_tunnel
+  fi
+}
+
 op_friday_remove() {
   log friday_remove
   sudo systemctl stop "$SVC" "$WORKER" 2>/dev/null
