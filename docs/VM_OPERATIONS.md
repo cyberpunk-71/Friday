@@ -10,7 +10,7 @@
 
 | File | Role | Must live on |
 |---|---|---|
-| `.github/workflows/vm-ops.yml` | receives `repository_dispatch` and runs `vm_cycle.sh` | **main** (GitHub only fires dispatches for workflows on the default branch) |
+| `infra/github/workflows/vm-ops.yml` | receives `repository_dispatch` and runs `vm_cycle.sh`. Copy it to `.github/workflows/vm-ops.yml` when deploying (pushing it needs a token with the `workflows` scope — the sandbox bot token does not have it, so the file lives in `infra/` until the owner merges it with a suitable token) | **main** (GitHub only fires dispatches for workflows on the default branch) |
 | `scripts/vm_cycle.sh` | the operator; dispatches to `op_friday_*`; writes `latest.json` | the **dispatched branch** (reads work from any branch you name) |
 
 ## Friday runtime layout on the VM
