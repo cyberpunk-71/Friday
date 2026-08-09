@@ -1,6 +1,3 @@
-# Friday VM ops v3 — receives repository_dispatch and runs scripts/vm_cycle.sh
-# on the self-hosted VM runner. MUST LIVE ON main.
-# Results are reported via the GitHub REST API (reliable) + artifact backup.
 name: vm-ops
 
 on:
@@ -44,26 +41,7 @@ jobs:
           BRANCH: ${{ github.event.client_payload.branch || 'main' }}
         run: |
           if [ ! -f vm_diagnostics/manual/latest.json ]; then
-            echo '{"ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","command":"'$CMD'","branch":"'$BRANCH'","status":"fail","output":"no latest.json produced"}' > vm_diagnostics/manual/latest.json
+            mkdir -p vm_diagnostics/manual
+            printf '%s' '{"ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","command":"'$CMD'","branch":"'$BRANCH'","status":"fail","output":"no latest.json produced"}' > vm_diagnostics/manual/latest.json
           fi
-          python3 - "$BRANCH" <<'PYEOF'
-import json, base64, os, sys, urllib.request
-branch = sys.argv[1]
-data = open("vm_diagnostics/manual/latest.json", "rb").read()
-body = json.dumps({
-    "message": "vm-ops: result",
-    "content": base64.b64encode(data).decode(),
-    "branch": branch,
-}).encode()
-req = urllib.request.Request(
-    "https://api.github.com/repos/cyberpunk-71/Friday/contents/vm_diagnostics/manual/latest.json",
-    data=body, method="PUT",
-    headers={"Authorization": f"Bearer {os.environ['GITHUB_TOKEN']}",
-             "Accept": "application/vnd.github+json",
-             "User-Agent": "vm-ops"})
-try:
-    with urllib.request.urlopen(req, timeout=30) as r:
-        print("API report: HTTP", r.status)
-except Exception as e:
-    print("API report failed:", e)
-PYEOF
+          python3 scripts/report_result.py "$BRANCH"
