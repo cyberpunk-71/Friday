@@ -1,7 +1,7 @@
 # Friday VM ops — receives repository_dispatch and runs scripts/vm_cycle.sh on
-# the self-hosted VM runner. MUST LIVE ON main for dispatches to fire
-# (GitHub only fires repository_dispatch workflows on the default branch);
-# scripts/vm_cycle.sh is read from the dispatched branch.
+# the self-hosted VM runner. MUST LIVE ON main for dispatches to fire.
+# Results are returned via BOTH a git commit (best-effort) AND a downloadable
+# artifact (reliable) so the dispatcher can always read the outcome.
 name: vm-ops
 
 on:
@@ -29,7 +29,15 @@ jobs:
           if [ -n "$FRIDAY_DEEPSEEK_KEY" ]; then
             echo "::add-mask::$FRIDAY_DEEPSEEK_KEY"
           fi
-          bash scripts/vm_cycle.sh "$CMD" "$BRANCH"
+          bash scripts/vm_cycle.sh "$CMD" "$BRANCH" || true
+
+      - name: Upload diagnostics artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostics
+          path: vm_diagnostics/
+          if-no-files-found: ignore
 
       - name: Commit diagnostics back
         run: |
