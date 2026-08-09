@@ -1,0 +1,50 @@
+# Blast-radius escalation rules (a genome file — editable by chat:
+# "stop asking me about drive writes" rewrites this + commits to the genome).
+# Actions are classified: safe | reversible | blocking.
+# Reversible actions execute NOW with an inline [↩ Undo] chip.
+# Blocking actions pause for approval. Escalation = reversible → blocking
+# when any rule below matches.
+
+rules:
+  - id: r1
+    when: {action: fs_delete, scope: single, path_in: [.friday-trash]}
+    class: safe
+  - id: r2
+    when: {action: fs_delete}
+    class: reversible            # → .friday-trash/30d TTL
+    escalate_if: {files: ">20"}
+  - id: r3
+    when: {action: drive_write}
+    class: reversible            # Drive revisions
+    escalate_if: {files: ">20"}
+  - id: r4
+    when: {action: git_push}
+    class: reversible            # branch + PR, never force
+    escalate_if: {force: true}
+  - id: r5
+    when: {action: email_send, recipients_ext: ">5"}
+    class: blocking
+  - id: r6
+    when: {action: email_send}
+    class: blocking              # Gmail send = one of exactly 2 blocking gates
+  - id: r7
+    when: {action: payment}
+    class: blocking              # Stripe/Shopify = the other blocking gate
+  - id: r8
+    when: {action: money_any}
+    class: blocking
+  - id: r9
+    when: {action: credential_read}
+    class: blocking
+  - id: r10
+    when: {action: browser_write, dom_has: [card, password, cvv, otp]}
+    class: blocking
+  - id: r11
+    when: {action: browser_write}
+    class: reversible            # session replay
+  - id: r12
+    when: {action: shell}
+    class: reversible
+  - id: r13
+    when: {action: api_write, scope: external}
+    class: reversible
