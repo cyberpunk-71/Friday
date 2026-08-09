@@ -1,7 +1,7 @@
-# Friday VM ops — receives repository_dispatch and runs scripts/vm_cycle.sh on
-# the self-hosted VM runner. MUST LIVE ON main for dispatches to fire.
-# Results are returned via BOTH a git commit (best-effort) AND a downloadable
-# artifact (reliable) so the dispatcher can always read the outcome.
+# Friday VM ops v2 — receives repository_dispatch and runs scripts/vm_cycle.sh
+# on the self-hosted VM runner. MUST LIVE ON main.
+# Results come back as a downloadable artifact (reliable) + a git commit
+# (best-effort; git may be missing from the runner PATH — we export it).
 name: vm-ops
 
 on:
@@ -40,9 +40,13 @@ jobs:
           if-no-files-found: ignore
 
       - name: Commit diagnostics back
+        env:
+          BRANCH: ${{ github.event.client_payload.branch || 'main' }}
         run: |
-          git config user.email "vm-ops@friday.local"
-          git config user.name "Friday VM Ops"
-          git add vm_diagnostics/manual/latest.json
+          export PATH="$PATH:/usr/bin:/usr/local/bin:/snap/bin"
+          command -v git || echo "git not found on runner PATH"
+          git config user.email "vm-ops@friday.local" || true
+          git config user.name "Friday VM Ops" || true
+          git add vm_diagnostics/manual/latest.json || true
           git commit -m "vm-ops: ${{ github.event.client_payload.command }} result" || true
-          git push origin "HEAD:${{ github.event.client_payload.branch || 'main' }}" || true
+          git push origin "HEAD:$BRANCH" || true

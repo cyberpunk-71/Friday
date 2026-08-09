@@ -258,7 +258,7 @@ CMD="${1:-}"
 BRANCH="${2:-$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)}"
 
 case "$CMD" in
-  friday_setup)       run_ops friday_setkey friday_deploy friday_test friday_nginx ;;
+  friday_setup)       run_ops friday_setkey friday_netcheck friday_deploy friday_test friday_nginx ;;
   friday_setkey)      run_ops friday_setkey ;;
   friday_deploy)      run_ops friday_deploy friday_test friday_nginx ;;
   friday_health)      run_ops friday_health ;;
