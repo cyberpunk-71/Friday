@@ -174,7 +174,7 @@ async def chat_history(limit: int = 50):
 # ADMIN
 # =========================================================================== #
 @app.get("/api/admin/overview")
-async def admin_overview(_: bool = Depends(_admin_auth)):
+async def admin_overview(request: Request, _: bool = Depends(_admin_auth)):
     db = get_db()
     hermes = Hermes(db)
     spend = hermes.spend_today()
