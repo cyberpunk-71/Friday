@@ -1,7 +1,7 @@
-# Friday VM ops v2 — receives repository_dispatch and runs scripts/vm_cycle.sh
+# Friday VM ops v3 — receives repository_dispatch and runs scripts/vm_cycle.sh
 # on the self-hosted VM runner. MUST LIVE ON main.
-# Results come back as a downloadable artifact (reliable) + a git commit
-# (best-effort; git may be missing from the runner PATH — we export it).
+# Results are reported via the GitHub REST API (reliable, no local git/blob
+# needed) + uploaded as an artifact as a backup channel.
 name: vm-ops
 
 on:
@@ -31,7 +31,7 @@ jobs:
           fi
           bash scripts/vm_cycle.sh "$CMD" "$BRANCH" || true
 
-      - name: Upload diagnostics artifact
+      - name: Upload diagnostics artifact (backup channel)
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -39,14 +39,32 @@ jobs:
           path: vm_diagnostics/
           if-no-files-found: ignore
 
-      - name: Commit diagnostics back
+      - name: Report result via GitHub API (primary channel)
+        if: always()
         env:
           BRANCH: ${{ github.event.client_payload.branch || 'main' }}
         run: |
-          export PATH="$PATH:/usr/bin:/usr/local/bin:/snap/bin"
-          command -v git || echo "git not found on runner PATH"
-          git config user.email "vm-ops@friday.local" || true
-          git config user.name "Friday VM Ops" || true
-          git add vm_diagnostics/manual/latest.json || true
-          git commit -m "vm-ops: ${{ github.event.client_payload.command }} result" || true
-          git push origin "HEAD:$BRANCH" || true
+          if [ ! -f vm_diagnostics/manual/latest.json ]; then
+            echo '{"ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","command":"'$CMD'","branch":"'$BRANCH'","status":"fail","output":"no latest.json produced"}' > vm_diagnostics/manual/latest.json
+          fi
+          python3 - "$BRANCH" <<'PYEOF'
+import json, base64, os, sys, urllib.request
+branch = sys.argv[1]
+data = open("vm_diagnostics/manual/latest.json", "rb").read()
+body = json.dumps({
+    "message": "vm-ops: result",
+    "content": base64.b64encode(data).decode(),
+    "branch": branch,
+}).encode()
+req = urllib.request.Request(
+    "https://api.github.com/repos/cyberpunk-71/Friday/contents/vm_diagnostics/manual/latest.json",
+    data=body, method="PUT",
+    headers={"Authorization": f"Bearer {os.environ['GITHUB_TOKEN']}",
+             "Accept": "application/vnd.github+json",
+             "User-Agent": "vm-ops"})
+try:
+    with urllib.request.urlopen(req, timeout=30) as r:
+        print("API report: HTTP", r.status)
+except Exception as e:
+    print("API report failed:", e)
+PYEOF
