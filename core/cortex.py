@@ -95,10 +95,9 @@ class Cortex:
         self.heart = Heart(self.db)
         self.llm = llm or make_llm()
         self.search = search or make_search()
-        # DeepSeek is the default for EVERYTHING when a key is configured:
-        # SETTLE extraction, task planning, and repair all use the same model.
-        if self.llm.name == "deepseek":
-            self.river.extractor = LLMExtractor(self.llm)
+        # FRIDAY-Δ: extraction is FUSED into the ⟨CTRL⟩ memory_writes of the
+        # one streaming call — no separate SETTLE LLM call per turn. The river
+        # heuristic extractor (0 LLM) handles the deterministic fallback.
         self.hands = Hands(self.db, self.search, None if self.llm.name == "sim" else self.llm)
         self._jobs: dict[str, asyncio.Task] = {}
 
@@ -193,38 +192,44 @@ class Cortex:
             {"role": "user", "content": text[:4000]},
         ]
         buffer, ctrl, prose_started = "", None, False
-        try:
-            async for chunk in self.llm.stream(
-                    messages, temperature=cfg.get("speak.temperature", 0.6),
-                    max_tokens=cfg.get("speak.max_turn_tokens", 1200)):
-                if ctrl is None and not prose_started:
-                    buffer += chunk
-                    parsed, rest = parse_ctrl(buffer)
-                    if parsed is not None:
-                        ctrl = parsed
-                        buffer = rest
-                        yield {"type": "ctrl", "ctrl": ctrl}
-                        await self._fire_ctrl(ctrl, corr_id, text, book_id)
-                        if rest:
-                            prose_started = True
-                            yield {"type": "delta", "text": rest}
-                            buffer = ""
-                    elif len(buffer) > 4000:
-                        # no CTRL block — treat everything as prose
+        stream = self.llm.stream(
+            messages, temperature=cfg.get("speak.temperature", 0.6),
+            max_tokens=cfg.get("speak.max_turn_tokens", 1200))
+        while True:
+            try:
+                chunk = await anext(stream)
+            except StopAsyncIteration:
+                break
+            except RuntimeError:
+                # network unavailable — degrade to the deterministic provider
+                # mid-turn; the fallback's output flows through the SAME
+                # incremental ⟨CTRL⟩ parser below
+                self.llm = SimProviderFallback()
+                stream = self.llm.stream(messages)
+                continue
+            if ctrl is None and not prose_started:
+                buffer += chunk
+                parsed, rest = parse_ctrl(buffer)
+                if parsed is not None:
+                    ctrl = parsed
+                    buffer = rest
+                    yield {"type": "ctrl", "ctrl": ctrl}
+                    await self._fire_ctrl(ctrl, corr_id, text, book_id)
+                    if rest:
                         prose_started = True
-                        yield {"type": "delta", "text": buffer}
+                        yield {"type": "delta", "text": rest}
                         buffer = ""
-                    continue
-                prose_started = True
-                if buffer:
+                elif len(buffer) > 4000:
+                    # no CTRL block — treat everything as prose
+                    prose_started = True
                     yield {"type": "delta", "text": buffer}
                     buffer = ""
-                yield {"type": "delta", "text": chunk}
-        except RuntimeError as e:
-            # network unavailable — degrade to sim provider mid-turn
-            self.llm = SimProviderFallback()
-            async for chunk in self.llm.stream(messages):
-                yield {"type": "delta", "text": chunk}
+                continue
+            prose_started = True
+            if buffer:
+                yield {"type": "delta", "text": buffer}
+                buffer = ""
+            yield {"type": "delta", "text": chunk}
 
         if buffer:
             yield {"type": "delta", "text": buffer}

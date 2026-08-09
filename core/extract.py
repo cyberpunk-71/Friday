@@ -21,6 +21,9 @@ text must be self-contained; kind=observation for transient states."""
 
 
 class LLMExtractor:
+    """Batched SETTLE extraction (used by nightly consolidation, NOT per turn —
+    per-turn LLM memory writes come from ⟨CTRL⟩ memory_writes)."""
+
     def __init__(self, llm: LLMProvider) -> None:
         self.llm = llm
 
@@ -29,11 +32,12 @@ class LLMExtractor:
         text = payload.get("text", "")
         if actor != "user" or len(text) < 8:
             return []
+        import asyncio
         try:
-            out = self.llm.complete(
+            out = asyncio.run(self.llm.complete(
                 [{"role": "system", "content": EXTRACT_SYSTEM},
                  {"role": "user", "content": text}],
-                json_mode=True, temperature=0.1, max_tokens=300)
+                json_mode=True, temperature=0.1, max_tokens=300))
             data = json.loads(out)
             atoms = data.get("atoms", [])
             for a in atoms:
