@@ -266,6 +266,47 @@ except Exception as e:
   ok friday_netcheck
 }
 
+op_friday_fix() {
+  log friday_fix
+  say "=== unit states ==="
+  say "core: $(systemctl is-active $SVC 2>/dev/null || echo down)  worker: $(systemctl is-active $WORKER 2>/dev/null || echo down)"
+  say "=== venv check ==="
+  if [ ! -x "$RUNTIME/.venv/bin/python" ]; then
+    say "venv missing/broken — repairing"
+    sudo apt-get install -y -qq python3-venv python3-pip 2>&1 | tail -1 || true
+    rm -rf "$RUNTIME/.venv"
+    python3 -m venv "$RUNTIME/.venv" 2>&1 | tail -2 || true
+  fi
+  if [ ! -x "$RUNTIME/.venv/bin/python" ]; then
+    say "venv STILL broken — cannot proceed"
+    fail friday_fix; return
+  fi
+  say "venv OK: $("$RUNTIME/.venv/bin/python" --version 2>&1)"
+  say "=== pip install (with retries) ==="
+  "$RUNTIME/.venv/bin/pip" install -q --upgrade pip 2>&1 | tail -1 || true
+  for attempt in 1 2 3; do
+    "$RUNTIME/.venv/bin/pip" install -q -r "$RUNTIME/requirements.txt" 2>&1 | tail -2 && break
+    say "pip attempt $attempt failed — retrying"
+    sleep 5
+  done
+  say "=== import check ==="
+  "$RUNTIME/.venv/bin/python" -c "import fastapi, uvicorn; print('imports OK')" 2>&1 | tail -2
+  say "=== port 8000 ==="
+  ss -ltn 2>/dev/null | grep ":8000 " | while read -r l; do say "$l"; done || say "nothing on :8000"
+  say "=== restart + wait ==="
+  sudo systemctl restart "$SVC" "$WORKER"
+  if wait_health; then
+    say "HEALTH OK after fix"
+    ok friday_fix
+  else
+    say "still failing — journal:"
+    sudo journalctl -u "$SVC" -n 30 --no-pager 2>/dev/null | tail -30 | while read -r l; do say "$l"; done
+    say "--- unit status ---"
+    systemctl status "$SVC" --no-pager 2>/dev/null | tail -12 | while read -r l; do say "$l"; done
+    fail friday_fix
+  fi
+}
+
 op_friday_remove() {
   log friday_remove
   sudo systemctl stop "$SVC" "$WORKER" 2>/dev/null
@@ -293,6 +334,7 @@ case "$CMD" in
   friday_nginx)       run_ops friday_nginx ;;
   friday_diagnose)    run_ops friday_diagnose ;;
   friday_netcheck)    run_ops friday_netcheck ;;
+  friday_fix)         run_ops friday_fix ;;
   friday_remove)      run_ops friday_remove ;;
   friday_all)         run_ops friday_deploy friday_test friday_health friday_nginx ;;
   *) echo "unknown command: $CMD"; exit 2 ;;
