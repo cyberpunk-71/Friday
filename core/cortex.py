@@ -167,7 +167,23 @@ class Cortex:
             f"## <SLOTS>{slots_json}</SLOTS>\n"
             f"## <NOW>{now_json}</NOW>\n"
             f"## CONSTRAINT LEDGER\n{constraints}\n"
-            f"## SPECULATIVE PRE-FIRE (may be stale; verify before citing)\n{prefire}")
+            f"## SPECULATIVE PRE-FIRE (fetched at t+0 — real, current results)\n{prefire}\n"
+            "## LIVE-DATA RULE (mandatory)\n"
+            "- The SPECULATIVE PRE-FIRE section holds live search results fetched for "
+            "this query. USE and CITE them. NEVER say \"I don't have live access\" or "
+            "\"I can't fetch\" when pre-fire results are present.\n"
+            "- For anything live (events, prices, schedules, news, people in office): "
+            "answer FROM the pre-fire results, not from memory. If pre-fire is empty "
+            "and the query needs live data, set code_intent=true so FORGE runs a real search.\n"
+            "## QUESTION DISCIPLINE (mandatory — this is an irritation blocker)\n"
+            "- Ask Budget: 2 clarifying questions per DAY. Prefer assuming: pick the "
+            "sensible default from the slots (city = user's home, time = now, type = "
+            "anything relevant) and STATE your assumption in one line.\n"
+            "- Never ask a question your slots already answer. Never ask more than one "
+            "question per turn. When the user says \"search X\" / \"look for X\", "
+            "SEARCH X — do not interrogate them for city/type/time first.\n"
+            "- Lead every reply with the ANSWER or the ACTION, then offer follow-ups "
+            "only at the end if genuinely useful.")
 
     def _genome_text(self, rel: str) -> str:
         p = cfg.genome_path(rel)

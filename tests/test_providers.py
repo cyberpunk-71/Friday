@@ -170,3 +170,42 @@ def test_sim_search_fixtures():
     assert any("Yatra" in r["title"] for r in res)
     res2 = _run(s.search("completely unrelated topic xyz"))
     assert len(res2) >= 1  # fails open
+
+
+def test_duckduckgo_html_parser():
+    from core.providers import DuckDuckGoSearch
+    html = '''
+    <div class="result results_links deep_link 1">
+      <a rel="nofollow" class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fevents&amp;rut=x">Events in Ahmedabad <b>today</b></a>
+      <a class="result__snippet" href="//duckduckgo.com/l/?uddg=...">Heritage walk at the riverfront, free entry.</a>
+    </div>
+    '''
+    out = DuckDuckGoSearch._parse_html(html, 5)
+    assert len(out) == 1
+    assert out[0]["url"] == "https://example.com/events"
+    assert "Ahmedabad" in out[0]["title"]
+    assert "riverfront" in out[0]["snippet"].lower()
+
+
+def test_duckduckgo_lite_parser():
+    from core.providers import DuckDuckGoSearch
+    html = '''
+    <a rel="nofollow" href="https://lite.example.org/show">Science City Planetarium show</a>
+    <td class="result-snippet">Astronomy night at 8pm &amp;ndash; free.</td>
+    '''
+    out = DuckDuckGoSearch._parse_lite(html, 5)
+    assert len(out) == 1
+    assert out[0]["url"] == "https://lite.example.org/show"
+    assert "Planetarium" in out[0]["title"]
+
+
+def test_make_search_defaults():
+    import os as _os
+    from core.providers import make_search
+    _os.environ.pop("TAVILY_API_KEY", None)
+    _os.environ["SEARCH_PROVIDER"] = "duckduckgo"
+    assert make_search().__class__.__name__ == "DuckDuckGoSearch"
+    _os.environ["SEARCH_PROVIDER"] = "sim"
+    assert make_search().__class__.__name__ == "SimSearch"
+    _os.environ.pop("SEARCH_PROVIDER", None)
+    assert make_search().__class__.__name__ == "DuckDuckGoSearch"

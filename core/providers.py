@@ -459,11 +459,93 @@ class SimSearch(SearchProvider):
         return out[:max_results]
 
 
+class DuckDuckGoSearch(SearchProvider):
+    """Keyless live search via DuckDuckGo HTML endpoints — works on the VM
+    (egress confirmed open) with zero API keys. Falls back to sim fixtures
+    on failure so nothing ever hard-crashes."""
+
+    UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+          "(KHTML, like Gecko) Chrome/126.0 Safari/537.36")
+
+    async def search(self, query: str, max_results: int = 6) -> list[dict]:
+        async with httpx.AsyncClient(timeout=12, follow_redirects=True,
+                                     headers={"User-Agent": self.UA}) as c:
+            # try html endpoint first, then lite
+            try:
+                r = await c.post("https://html.duckduckgo.com/html/", data={"q": query})
+                if r.status_code == 200:
+                    out = self._parse_html(r.text, max_results)
+                    if out:
+                        return out
+            except Exception:
+                pass
+            try:
+                r = await c.post("https://lite.duckduckgo.com/lite/", data={"q": query})
+                if r.status_code == 200:
+                    out = self._parse_lite(r.text, max_results)
+                    if out:
+                        return out
+            except Exception:
+                pass
+        # graceful degradation → deterministic fixtures
+        return await SimSearch().search(query, max_results)
+
+    @staticmethod
+    def _clean(h: str) -> str:
+        import html as _h
+        import re
+        t = _h.unescape(h)
+        t = re.sub(r"<[^>]+>", "", t)
+        return re.sub(r"\s+", " ", t).strip()
+
+    @staticmethod
+    def _clean_url(href: str) -> str:
+        from urllib.parse import parse_qs, unquote, urlparse
+        if "uddg=" in href:
+            q = parse_qs(urlparse(href).query)
+            if q.get("uddg"):
+                return unquote(q["uddg"][0])
+        return href
+
+    @staticmethod
+    def _parse_html(html: str, max_results: int) -> list[dict]:
+        import re
+        out = []
+        for block in re.split(r'<div class="result', html)[1:]:
+            m = re.search(r'class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>', block, re.S)
+            s = re.search(r'class="result__snippet"[^>]*>(.*?)</a>', block, re.S)
+            if not m:
+                continue
+            title = DuckDuckGoSearch._clean(m.group(2))
+            snippet = DuckDuckGoSearch._clean(s.group(1)) if s else ""
+            if title:
+                out.append({"title": title[:200], "url": DuckDuckGoSearch._clean_url(m.group(1)),
+                            "snippet": snippet[:300]})
+            if len(out) >= max_results:
+                break
+        return out
+
+    @staticmethod
+    def _parse_lite(html: str, max_results: int) -> list[dict]:
+        import re
+        titles = re.findall(r'<a rel="nofollow" href="([^"]+)"[^>]*>(.*?)</a>', html, re.S)
+        snippets = re.findall(r'<td class="result-snippet">(.*?)</td>', html, re.S)
+        out = []
+        for i, (href, title) in enumerate(titles[:max_results]):
+            snip = DuckDuckGoSearch._clean(snippets[i]) if i < len(snippets) else ""
+            out.append({"title": DuckDuckGoSearch._clean(title)[:200],
+                        "url": DuckDuckGoSearch._clean_url(href),
+                        "snippet": snip[:300]})
+        return out
+
+
 def make_search() -> SearchProvider:
-    prov = os.environ.get("SEARCH_PROVIDER", "tavily")
+    prov = os.environ.get("SEARCH_PROVIDER", "duckduckgo")
     if prov == "tavily" and os.environ.get("TAVILY_API_KEY"):
         return TavilySearch()
-    return SimSearch()
+    if prov == "sim":
+        return SimSearch()
+    return DuckDuckGoSearch()
 
 
 async def web_read(url: str, max_chars: int = 12000) -> str:

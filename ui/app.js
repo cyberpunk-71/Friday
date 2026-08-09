@@ -509,7 +509,8 @@ async function loadFocus() {
     state.focus.ends = s.start_ts + s.target_min * 60;
     $("#focus-start").classList.add("hidden");
     $("#focus-stop").classList.remove("hidden");
-    $("#focus-live").innerHTML = `<div class="dim">session #${s.session_id} · allow: ${esc(JSON.parse(s.allow_domains || "[]").join(", ") || "none")} · drifts: ${s.drift_count}</div>`;
+    $("#focus-live").innerHTML = `<div class="dim">session #${s.session_id} · allow: ${esc(JSON.parse(s.allow_domains || "[]").join(", ") || "none")} · drifts: ${s.drift_count}</div>
+      <div class="dim" style="margin-top:6px">📡 Drift sensor: this tab is tracked (tab-switch = drift). For full browser tracking install the extension: <a href="/api/extension/zip" download style="color:var(--accent)">friday-sensor.zip</a> → chrome://extensions → Load unpacked.</div>`;
   } else {
     state.focus.active = null;
     $("#focus-start").classList.remove("hidden");
@@ -748,6 +749,25 @@ $$(".tab[data-atab]").forEach(t => t.addEventListener("click", () => {
   if (t.dataset.atab === "genome") loadGenome();
 }));
 
+/* ============================== focus sensor ============================== */
+/* PWA-level drift sensor: when a focus session is active and this tab loses
+   visibility (user switched to another tab/app), report a drift so Friday can
+   nudge. Full tab tracking comes from the MV3 extension (download via
+   /api/extension/zip), this covers the no-extension case. */
+let lastDriftReport = 0;
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden && state.focus.active) {
+    const now = Date.now();
+    if (now - lastDriftReport < 15000) return;      // server also dedupes 60s
+    lastDriftReport = now;
+    fetch("/api/focus/drift", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: location.href.slice(0, 500), title: document.title.slice(0, 200) }),
+    }).catch(() => {});
+  }
+});
+
 /* ============================== live loops ============================== */
 async function pollOverview() {
   try {
@@ -804,6 +824,14 @@ function applyTheme(t) { document.documentElement.dataset.theme = t; }
 /* ============================== boot ============================== */
 (async function boot() {
   setInterval(pollOverview, 10000);
+  setInterval(async () => {           // keep focus state fresh for the sensor
+    try {
+      const a = await api("/api/focus/active");
+      if (a.session) { state.focus.active = a.session; state.focus.total = a.session.target_min;
+                       state.focus.ends = a.session.start_ts + a.session.target_min * 60; }
+      else state.focus.active = null;
+    } catch (e) {}
+  }, 10000);
   setInterval(pollFocus, 1000);
   setInterval(async () => { if (state.view === "tasks") loadTasks(); }, 8000);
   setInterval(async () => { if (state.view === "focus") loadFocus(); }, 15000);

@@ -20,7 +20,7 @@ from pathlib import Path
 from fastapi import (Depends, FastAPI, File, Form, HTTPException, Query, Request,
                      UploadFile, WebSocket, WebSocketDisconnect)
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from .config import cfg
@@ -581,6 +581,23 @@ async def ext_config():
     """Extension reads its config (focus endpoint + notification prefs)."""
     db = get_db()
     return {"endpoint": "/api/focus/drift", "channels": cfg.get("focus.nudge_channels", {})}
+
+
+@app.get("/api/extension/zip")
+async def extension_zip():
+    """Serve the MV3 sensor extension as a zip for one-click install."""
+    import io as _io
+    import zipfile
+    base = cfg.root / "extension"
+    if not base.exists():
+        raise HTTPException(404, "extension not bundled")
+    buf = _io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for f in sorted(base.rglob("*")):
+            if f.is_file() and not f.name.endswith(".pem"):
+                z.writestr(f.relative_to(base).as_posix(), f.read_bytes())
+    return Response(content=buf.getvalue(), media_type="application/zip",
+                    headers={"Content-Disposition": "attachment; filename=friday-sensor.zip"})
 
 
 # =========================================================================== #

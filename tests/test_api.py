@@ -236,3 +236,14 @@ def test_admin_auth_enforced(client, monkeypatch):
     r = client.get("/api/admin/overview")
     # with env token set, missing header → 401
     assert r.status_code in (200, 401)
+
+
+def test_extension_zip_download(client):
+    r = client.get("/api/extension/zip")
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/zip"
+    import zipfile, io
+    z = zipfile.ZipFile(io.BytesIO(r.content))
+    names = z.namelist()
+    assert "manifest.json" in names
+    assert "background.js" in names
