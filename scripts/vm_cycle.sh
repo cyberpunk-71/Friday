@@ -42,7 +42,7 @@ json.dump(payload, sys.stdout)
     ( cd "$WS" && \
       git config user.email "vm-ops@friday.local" 2>/dev/null; \
       git config user.name "Friday VM Ops" 2>/dev/null; \
-      git add vm_diagnostics/manual/latest.json 2>/dev/null && \
+      git add -f vm_diagnostics/manual/latest.json 2>/dev/null && \
       git commit -m "vm-ops: $CMD result" 2>/dev/null && \
       git push origin "HEAD:$BRANCH" 2>/dev/null ) && \
       say "result pushed to $BRANCH" || say "result push skipped/failed (non-fatal)"
