@@ -574,7 +574,14 @@ class DuckDuckGoSearch(SearchProvider):
           "(KHTML, like Gecko) Chrome/126.0 Safari/537.36")
 
     async def search(self, query: str, max_results: int = 6) -> list[dict]:
-        # live chain: DDG html → DDG lite → Bing → Google News RSS → sim fixtures
+        # live chain: Google News RSS (bot-tolerant, works from datacenter IPs)
+        # → DDG html → DDG lite → Bing → sim fixtures
+        try:
+            out = await GoogleNewsRSS().search(query, max_results)
+            if out:
+                return out
+        except Exception:
+            pass
         async with httpx.AsyncClient(timeout=12, follow_redirects=True,
                                      headers={"User-Agent": self.UA}) as c:
             try:
@@ -593,13 +600,12 @@ class DuckDuckGoSearch(SearchProvider):
                         return out
             except Exception:
                 pass
-        for prov in (BingSearch(), GoogleNewsRSS()):
-            try:
-                out = await prov.search(query, max_results)
-                if out:
-                    return out
-            except Exception:
-                pass
+        try:
+            out = await BingSearch().search(query, max_results)
+            if out:
+                return out
+        except Exception:
+            pass
         # graceful degradation → deterministic fixtures (marked not-live)
         sim = await SimSearch().search(query, max_results)
         for s in sim:
