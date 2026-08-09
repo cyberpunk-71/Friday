@@ -243,11 +243,16 @@ class SimProvider(LLMProvider):
 
     def _prose(self, text: str, low: str, slots: list[dict], now: dict, ctrl: dict) -> str:
         # 1. greeting/time-awareness
-        if re.search(r"^(good morning|good evening|good night|morning|gm|hi|hey|hello)$", low.strip()):
+        if re.search(r"^(good morning|good evening|good night|morning|gm|hii*|heyy*|hi|hey|hello|yo)$", low.strip()):
             h = now.get("clock", {}).get("iso", "")
             d = now.get("last_seen_delta_h", 0)
-            return (f"Good morning — {h}, and it's been {d}h since we last talked. "
-                    f"{self._loop_line(now)}").strip()
+            if "good morning" in low or "gm" in low:
+                return (f"Good morning — {h}, and it's been {d}h since we last talked. "
+                        f"{self._loop_line(now)}").strip()
+            if d >= 2:
+                return (f"Hey — welcome back, it's been {d}h. {self._loop_line(now)} "
+                        "What are we working on?").strip()
+            return "Hey! I'm here — one chat for research, tasks, memory, focus, books. What do you need?"
         # 2. focus
         m = re.search(r"(?:start|begin) foc\w* ?(\d+) ?m", low)
         if m and ("allow" in low or "focus" in low or True):
