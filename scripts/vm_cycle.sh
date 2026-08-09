@@ -514,7 +514,7 @@ case "$CMD" in
   friday_nginx)       run_ops friday_nginx ;;
   friday_diagnose)    run_ops friday_diagnose ;;
   friday_netcheck)    run_ops friday_netcheck ;;
-  friday_chattest)    run_ops friday_chattest ;;
+  friday_chattest*)  FRIDAY_TEST_QUERY="${CMD#friday_chattest:}"; run_ops friday_chattest ;;
   friday_fix)         run_ops friday_fix ;;
   friday_tunnel)      run_ops friday_tunnel ;;
   friday_remove)      run_ops friday_remove ;;
