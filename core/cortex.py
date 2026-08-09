@@ -267,7 +267,24 @@ class Cortex:
             if h["user_text"] and h["reply"]:
                 messages.append({"role": "user", "content": (h["user_text"] or "")[:800]})
                 messages.append({"role": "assistant", "content": (h["reply"] or "")[:1200]})
-        messages.append({"role": "user", "content": text[:4000]})
+        # LIVE GROUNDING: put the pre-fire results INSIDE the user message as
+        # a numbered fact list — the model cannot miss them here.
+        pf = self.hermes.prefire_state
+        user_msg = text[:4000]
+        if pf and pf.search:
+            lines = [f"{i+1}. {r.get('title','')[:150]} — {r.get('snippet','')[:180]} ({r.get('url','')[:120]})"
+                     for i, r in enumerate(pf.search[:5])]
+            user_msg = (
+                f"LIVE SEARCH RESULTS (fetched seconds ago, REAL data — use them):\n"
+                + "\n".join(lines)
+                + f"\n\nUSER QUESTION: {text[:3000]}\n\n"
+                "IMPORTANT: Answer using the LIVE SEARCH RESULTS above. "
+                "Summarize them with sources even if they are news articles or "
+                "guides rather than ticketed listings. Do NOT say you have no data."
+            )
+        if pf and pf.web:
+            user_msg += f"\n\nLIVE PAGE SNIPPET (BookMyShow/events):\n{pf.web[:2500]}"
+        messages.append({"role": "user", "content": user_msg})
         buffer, ctrl, prose_started = "", None, False
         stream = self.llm.stream(
             messages, temperature=cfg.get("speak.temperature", 0.6),
@@ -694,6 +711,14 @@ class Cortex:
         sense = await asyncio.to_thread(self._sense, text, book_id)
         city_hint = self._city_from_slots(sense.get("slots", []))
         self.hermes.prefire_state = await self.hermes.prefire(text, city=city_hint)
+        # diagnostic: what did the pre-fire actually produce this turn?
+        _pf = self.hermes.prefire_state
+        self.db.set_setting("diag.last_prefire", json.dumps({
+            "n": len(_pf.search) if _pf else 0,
+            "titles": [r.get("title", "")[:80] for r in (_pf.search[:5] if _pf else [])],
+            "web_len": len(_pf.web) if _pf and _pf.web else 0,
+            "city_hint": city_hint,
+        }, ensure_ascii=False))
         sense["prefire"] = self.hermes.prefire_state
         yield {"type": "sense", "slots": sense["slots"], "confidence": sense["confidence"],
                "sense_ms": sense["sense_ms"], "now": sense["now"],

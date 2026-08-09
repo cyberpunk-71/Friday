@@ -471,6 +471,9 @@ op_friday_chattest() {
   # pull the saved turn (model + latency + cost)
   hist=$(curl -s -m 10 "http://127.0.0.1:${PORT}/api/chat/history?limit=1" 2>&1 | head -c 1500)
   say "LAST_TURN: ${hist}"
+  # prefire diagnostic (what did the search produce?)
+  diag=$(curl -s -m 10 "http://127.0.0.1:${PORT}/api/admin/settings" 2>&1 | head -c 1200)
+  say "PREFIRE_DIAG: ${diag}"
   ok friday_chattest
 }
 
