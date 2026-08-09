@@ -55,11 +55,11 @@ class Focus:
         if any(d in domain or domain in d for d in allow):
             return {"ok": True, "nudges": [], "allowed": True}
         now = time.time()
-        # dedupe same-url drifts within 10s (prevents double-fire from the PWA
+        # dedupe same-url drifts within 5s (prevents double-fire from the PWA
         # sensor + extension reporting the same drift; NOT a 60s gate that
         # swallows repeated drifts)
         dup = self.db.q1("SELECT id FROM distraction_events WHERE session_id=? AND url=? AND ts>?",
-                         (s["session_id"], url, now - 10))
+                         (s["session_id"], url, now - 5))
         if dup:
             return {"ok": True, "nudges": []}
         self.db.exec("INSERT INTO distraction_events(session_id,url,ts,kind) VALUES(?,?,?, 'drift')",

@@ -220,6 +220,19 @@ function renderCard(card) {
     case "belief": html = `<div class="card"><h3>🧠 Belief</h3><div class="card-row"><span class="chip alpha">α ${card.alpha}</span><span class="chip beta">β ${card.beta}</span><span class="chip">conf ${(card.confidence * 100).toFixed(0)}%</span></div><p style="margin-top:6px">${esc(card.statement)}</p><div class="card-row" style="margin-top:8px"><button class="mini-btn good" onclick="rateClaim(${card.claim_id},'up')">👍</button><button class="mini-btn bad" onclick="rateClaim(${card.claim_id},'down')">👎</button><button class="mini-btn" onclick="editClaim(${card.claim_id})">✎ edit</button></div></div>`; break;
     case "undo": html = `<div class="card"><div class="card-row"><span class="chip good">✓ reversible</span><span class="undo-chip" onclick="undoLast(${card.task_id || 0})">↩ Undo ${card.seconds || 89}s</span></div></div>`; break;
     case "provider_key": html = `<div class="card"><h3>🔑 API key</h3><div class="card-row"><span class="chip good">${esc(card.scope)}</span><span class="chip">${esc(card.masked)}</span></div></div>`; break;
+    case "focus": {
+      if (card.action === "start") {
+        state.focus.active = { session_id: card.session_id, target_min: card.minutes,
+                               start_ts: Date.now() / 1000, drift_count: 0 };
+        state.focus.total = card.minutes;
+        state.focus.ends = Date.now() / 1000 + card.minutes * 60;
+        armNotifications();
+      } else if (card.action === "stop") {
+        state.focus.active = null;
+      }
+      html = `<div class="card"><h3>🎯 Focus</h3><div class="card-row"><span class="chip good">${esc(card.message || "")}</span></div></div>`;
+      break;
+    }
     case "book_sources": html = `<div class="card"><h3>📚 Sources</h3><div class="card-row">${(card.chunks || []).map(c => `<span class="chip">p${c.page}</span>`).join("")}</div></div>`; break;
     case "task_created": html = `<div class="card"><h3>🧩 Task #${card.task_id}</h3><div class="card-row"><span class="chip">${esc(card.status)}</span><button class="mini-btn" onclick="switchView('tasks')">open Tasks</button></div></div>`; break;
     default: html = `<div class="card"><pre>${esc(JSON.stringify(card))}</pre></div>`;
@@ -768,18 +781,35 @@ $$(".tab[data-atab]").forEach(t => t.addEventListener("click", () => {
    nudge immediately. Full tab tracking comes from the MV3 extension (download
    via /api/extension/zip), this covers the no-extension case. */
 let lastDriftReport = 0;
-document.addEventListener("visibilitychange", () => {
-  if (document.hidden && state.focus.active) {
-    const now = Date.now();
-    if (now - lastDriftReport < 4000) return;       // server also dedupes 10s
-    lastDriftReport = now;
-    fetch("/api/focus/drift", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url: location.href.slice(0, 500), title: document.title.slice(0, 200) }),
-    }).catch(() => {});
-  }
-});
+
+function reportDrift() {
+  if (!state.focus.active) return;
+  const now = Date.now();
+  if (now - lastDriftReport < 3000) return;          // client throttle
+  lastDriftReport = now;
+  fetch("/api/focus/drift", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url: location.href.slice(0, 500), title: document.title.slice(0, 200) }),
+  })
+    .then(r => r.json())
+    .then(res => {
+      // ACT on the server's nudges IMMEDIATELY — don't wait for the SSE
+      // stream (hidden tabs throttle SSE; this path is instant).
+      if (res && res.nudges && res.nudges.length) {
+        for (const n of res.nudges) {
+          if (n.channel === "toast") toast(`🎯 ${esc(n.message)}`, "focus");
+          if (n.channel === "chrome") notifyChrome("🎯 Friday — focus", n.message);
+          if (n.channel === "voice") speakNudge(n.message);
+        }
+        beep();
+      }
+    })
+    .catch(() => {});
+}
+document.addEventListener("visibilitychange", () => { if (document.hidden) reportDrift(); });
+window.addEventListener("blur", () => { if (document.hidden) reportDrift(); });
+window.addEventListener("pagehide", () => { if (state.focus.active) reportDrift(); });
 
 /* Chrome-desktop notifications for nudges — visible even when the Friday tab
    is hidden (this is the "immediate nudge" the user asked for). */
@@ -796,6 +826,28 @@ function armNotifications() {
     Notification.requestPermission();
   }
 }
+/* audible nudge (works even if the tab is hidden — user asked for immediacy) */
+function speakNudge(text) {
+  try {
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = "en-IN"; u.rate = 1.05;
+    speechSynthesis.speak(u);
+  } catch (e) {}
+}
+function beep() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = "square"; o.frequency.value = 880;
+    g.gain.value = 0.06;
+    o.connect(g); g.connect(ctx.destination);
+    o.start(); setTimeout(() => { o.stop(); ctx.close(); }, 220);
+  } catch (e) {}
+}
+/* request notification permission on first user gesture (chat focus-start
+   doesn't go through the panel button, so this covers that path) */
+["pointerdown", "keydown", "touchstart"].forEach(evt =>
+  window.addEventListener(evt, () => armNotifications(), { once: true, passive: true }));
 
 /* ============================== live loops ============================== */
 async function pollOverview() {
@@ -872,7 +924,7 @@ function applyTheme(t) { document.documentElement.dataset.theme = t; }
                        state.focus.ends = a.session.start_ts + a.session.target_min * 60; }
       else state.focus.active = null;
     } catch (e) {}
-  }, 10000);
+  }, 3000);
   setInterval(pollFocus, 1000);
   setInterval(async () => { if (state.view === "tasks") loadTasks(); }, 8000);
   setInterval(async () => { if (state.view === "focus") loadFocus(); }, 15000);
