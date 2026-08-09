@@ -851,7 +851,7 @@ async def searchtest(q: str = "events in ahmedabad today", debug: bool = False,
                         r = await c.get(url, params=params)
                     return {"provider": name, "status": r.status_code,
                             "len": len(r.text),
-                            "sample": r.text[:300].replace("\n", " ")}
+                            "sample": r.text[:1500].replace("\n", " ")}
             except Exception as e:
                 return {"provider": name, "error": str(e)[:150]}
 
