@@ -861,7 +861,7 @@ async def searchtest(q: str = "events in ahmedabad today", debug: bool = False,
             ("GoogleNews", "https://news.google.com/rss/search",
              {"q": q, "hl": "en-IN", "gl": "IN", "ceid": "IN:en"}),
         ]
-        if _provider:
+        if provider:
             targets = [t for t in targets if t[0].lower() == _provider.lower()]
         res = await _aio.gather(*[raw(*t) for t in targets])
         return {"debug": True, "query": q, "raw": res}
