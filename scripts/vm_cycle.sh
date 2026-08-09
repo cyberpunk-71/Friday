@@ -137,10 +137,11 @@ op_friday_deploy() {
   # copy code — plain cp (no rsync dependency), VERBOSE on failure
   rm -rf "$RUNTIME/core" "$RUNTIME/ui" "$RUNTIME/configs" "$RUNTIME/tests" \
          "$RUNTIME/requirements.txt" "$RUNTIME/run.py" "$RUNTIME/.env.example" \
-         "$RUNTIME/infra" "$RUNTIME/scripts" "$RUNTIME/extension" 2>/dev/null
+         "$RUNTIME/infra" "$RUNTIME/scripts" "$RUNTIME/extension" \
+         "$RUNTIME/genome" 2>/dev/null
   cp -a "$WS/core" "$WS/ui" "$WS/configs" "$WS/tests" "$WS/requirements.txt" \
         "$WS/run.py" "$WS/.env.example" "$WS/infra" "$WS/scripts" \
-        "$WS/extension" "$RUNTIME"/ 2>&1 | tail -3 || { fail friday_deploy; say "copy FAILED"; return; }
+        "$WS/extension" "$WS/genome" "$RUNTIME"/ 2>&1 | tail -3 || { fail friday_deploy; say "copy FAILED"; return; }
   rm -rf "$RUNTIME/genome/.git" 2>/dev/null || true
   if [ ! -f "$RUNTIME/requirements.txt" ]; then fail friday_deploy; say "requirements.txt MISSING after copy"; return; fi
   say "code copied: $(ls "$RUNTIME" | tr '\n' ' ')"
