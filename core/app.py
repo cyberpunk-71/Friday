@@ -881,7 +881,12 @@ async def searchtest(q: str = "events in ahmedabad today", debug: bool = False,
             gnews_item = len(_re.findall(r"<item>", html))
             item["parser_diag"] = {"b_algo": b_algo, "h2_a": h2a,
                                    "ddg_result": ddg_result, "ddg_result_a": ddg_a,
-                                   "gnews_item": gnews_item}
+                                   "gnews_item": gnews_item,
+                                   "b_algo_any": len(_re.findall(r"b_algo", html)),
+                                   "h2_any": len(_re.findall(r"<h2", html)),
+                                   "a_href_any": len(_re.findall(r'<a href="http', html)),
+                                   "captcha": len(_re.findall(r"(captcha|consent|unusual|robot)", html, _re.I)),
+                                   "b_results": len(_re.findall(r'id="b_results"', html))}
         return {"debug": True, "query": q, "raw": res}
 
     async def try_prov(prov, name):
