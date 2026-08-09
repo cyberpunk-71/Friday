@@ -92,6 +92,15 @@ app = FastAPI(title="Friday", version=APP_VERSION, lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
+
+@app.middleware("http")
+async def no_cache_static(request: Request, call_next):
+    """Static assets must never be stale-cached — the UI ships fixes constantly."""
+    resp = await call_next(request)
+    if request.url.path.startswith("/static/"):
+        resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return resp
+
 UI_DIR = cfg.root / "ui"
 if UI_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(UI_DIR)), name="static")
@@ -244,16 +253,27 @@ async def models_configure(payload: dict, request: Request, _: bool = Depends(_a
 
 @app.post("/api/admin/providers/test")
 async def providers_test(payload: dict | None = None, _: bool = Depends(_admin_auth)):
+    """Test the DeepSeek provider. Returns categorized diagnostics:
+    blocked (no egress / TLS), invalid_key, or ok with a live reply."""
     from .providers import DeepSeekProvider
-    key = payload.get("api_key") if payload else None
+    key = (payload.get("api_key") if payload else None) or os.environ.get("DEEPSEEK_API_KEY", "")
+    if not key:
+        return {"ok": False, "error": "no key configured — set it in Models & Keys or tell Friday in chat"}
     p = DeepSeekProvider(api_key=key)
-    if not p.available:
-        return {"ok": False, "error": "no key configured"}
     try:
         out = await p.complete([{"role": "user", "content": "ping"}], max_tokens=5)
-        return {"ok": True, "reply": out[:50]}
+        return {"ok": True, "reply": out[:50], "note": "live DeepSeek call succeeded"}
+    except RuntimeError as e:
+        msg = str(e)
+        if "network unreachable" in msg or "TLS" in msg or "SSL" in msg or "ConnectError" in msg:
+            return {"ok": False, "error": "network blocked from this environment",
+                    "detail": msg[:160],
+                    "fix": "This sandbox only allows pypi/github egress. On the VM, run "
+                           "friday_netcheck and open the OCI security list to 443 outbound "
+                           "if needed — the VM is where live DeepSeek calls run."}
+        return {"ok": False, "error": msg[:200]}
     except Exception as e:
-        return {"ok": False, "error": str(e)[:200]}
+        return {"ok": False, "error": f"{type(e).__name__}: {str(e)[:160]}"}
 
 
 @app.post("/api/admin/oneclick")
