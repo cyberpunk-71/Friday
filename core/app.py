@@ -841,14 +841,17 @@ async def searchtest(q: str = "events in ahmedabad today", debug: bool = False,
 
     if debug:
         # raw probes: status + first bytes of each provider's response
-        async def raw(name, url, **kw):
+        async def raw(name, url, params=None):
             try:
                 async with _httpx.AsyncClient(timeout=15, follow_redirects=True,
                                               headers={"User-Agent": DuckDuckGoSearch.UA}) as c:
-                    r = await c.get(url, **kw) if kw.get("params") else await c.post(url, data={"q": q})
+                    if params is None:
+                        r = await c.post(url, data={"q": q})
+                    else:
+                        r = await c.get(url, params=params)
                     return {"provider": name, "status": r.status_code,
                             "len": len(r.text),
-                            "sample": r.text[:400].replace("\n", " ")}
+                            "sample": r.text[:300].replace("\n", " ")}
             except Exception as e:
                 return {"provider": name, "error": str(e)[:150]}
 
