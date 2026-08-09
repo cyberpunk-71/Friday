@@ -547,18 +547,38 @@ class GoogleNewsRSS(SearchProvider):
 
     @staticmethod
     def _parse(xml: str, max_results: int) -> list[dict]:
+        """Handle BOTH RSS 2.0 (no namespace — what Google News serves) and
+        Atom (namespaced) feeds."""
         import xml.etree.ElementTree as ET
         out = []
         try:
             root = ET.fromstring(xml)
         except Exception:
             return []
-        ns = {"m": "http://www.w3.org/2005/Atom"}
-        for item in root.findall(".//m:item", ns)[:max_results]:
-            title = item.findtext("m:title", "", ns)
-            link = item.findtext("m:link", "", ns)
-            date = item.findtext("m:pubDate", "", ns)
-            src = item.findtext("m:source", "", ns)
+        ATOM = "{http://www.w3.org/2005/Atom}"
+
+        def _text(item, *tags):
+            for t in tags:
+                e = item.find(t)
+                if e is not None and (e.text or "").strip():
+                    return e.text.strip()
+            return ""
+
+        def _link(item):
+            e = item.find("link")
+            if e is None:
+                e = item.find(f"{ATOM}link")
+            if e is None:
+                return ""
+            href = e.get("href") or ""
+            return href or (e.text or "").strip()
+
+        items = root.findall(".//item") or root.findall(f".//{ATOM}entry")
+        for item in items[:max_results]:
+            title = _text(item, "title", f"{ATOM}title")
+            link = _link(item)
+            date = _text(item, "pubDate", f"{ATOM}updated")
+            src = _text(item, "source", f"{ATOM}source")
             if title and link:
                 snip = f"{src} · {date}" if (src or date) else ""
                 out.append({"title": title[:200], "url": link, "snippet": snip[:300]})
