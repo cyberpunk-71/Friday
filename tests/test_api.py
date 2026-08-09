@@ -115,8 +115,12 @@ def test_tasks_flow_with_approval(client, db):
         from core.providers import SimSearch
         hands = Hands(db, search=SimSearch())
         loop = asyncio.get_event_loop()
-        loop.run_until_complete(hands.plan_task(t["task_id"], t["title"], {}))
-        list(loop.run_until_complete(hands.execute(t["task_id"], "test")))
+
+        async def _drive():
+            await hands.plan_task(t["task_id"], t["title"], {})
+            return [e async for e in hands.execute(t["task_id"], "test")]
+
+        loop.run_until_complete(_drive())
         t = db.q1("SELECT * FROM tasks WHERE task_id=?", (t["task_id"],))
     assert t["status"] == "waiting_approval"
     assert t["approval_kind"] == "payment"
