@@ -1,0 +1,128 @@
+# Friday default configuration — every knob here is overridable live via the
+# Admin panel (settings table) and via chat feedback (⟨CTRL⟩ config_deltas).
+# Numeric keys mirror core.config so the Admin panel can render them.
+
+# ---- Retrieval (SENSE) ----
+retrieval:
+  k_vector: 200          # binary prefilter top-k
+  k_rerank: 200          # fp16 matmul rerank top-k
+  k_sql: 60              # BM25/entity/1-hop candidates
+  k_final: 12            # slot output
+  mmr_lambda: 0.70
+  graph_expand: 0.60     # 1-hop expansion weight
+  slot_types:            # the 12 guaranteed slots (SLOT-FILL, not MMR-only)
+    - identity
+    - correction
+    - correction
+    - open_loop
+    - open_loop
+    - topical
+    - topical
+    - topical
+    - topical
+    - tension
+    - procedure
+    - fallback
+  constraints_ledger_lines: 15
+  recall_min_confidence: 0.42   # below this → Agent-SQL / ask path allowed
+  agent_sql_max_queries: 3
+
+# ---- Salience weights (prior; refit nightly by Gym into genome/scorer.json) ----
+salience:
+  w_cos: 0.35
+  w_rec: 0.15
+  w_str: 0.15
+  w_emo: 0.15
+  w_freq: 0.10
+  w_cen: 0.10
+  decay_base: {fact: 0.005, preference: 0.003, episodic: 0.015, pattern: 0.010,
+               goal: 0.004, procedure: 0.002, emotional: 0.012, observation: 0.020,
+               correction: 0.000, tension: 0.008}
+  emotion_slow_beta: 2.0
+  rehash_alpha: 0.15
+  strength_min: 0.3
+
+# ---- Beliefs (Psyche) ----
+beliefs:
+  correction_weight: 10.0      # CORRECTION SUPREMACY — user correction weight
+  inference_weight: 0.3        # LLM inference evidence weight
+  rating_weight: 2.0           # user ⭐/👍/👎 evidence weight
+  decay_half_life_days: 180.0  # beta evidence decay → old beliefs become UNCERTAIN
+  tension_raise_threshold: 0.55
+  challenged_stability: 0.30
+  user_confirm_alpha: 3.0
+
+# ---- SPEAK ----
+speak:
+  model: deepseek-chat
+  temperature: 0.6
+  cached_prefix_tokens: 4800
+  fresh_budget_tokens: 1900
+  first_byte_ms_target: 620
+  ctrl_block_tokens: 40        # tokens 1..40 = ⟨CTRL⟩ control block
+  max_turn_tokens: 1200
+
+# ---- Hermes (task governor) ----
+hermes:
+  pre_fire: true               # deterministic pre-fire (warm E2B + speculative search)
+  pre_fire_max_usd: 0.0002
+  governor_per_turn_usd: 0.05
+  governor_per_day_usd: 3.0    # soft cap; hard cap = daily_budget
+  blast_radius:
+    max_files: 20              # >20 files → auto-escalate to approval
+    max_ext_recipients: 5
+    max_money_usd: 0.0         # any money → blocking
+    credential_read: true      # any credential read → blocking
+    dom_sensitive_fields: [card, password, cvv, otp]
+  ask_budget_per_day: 2
+  max_parallel_dags: 10
+
+# ---- Ledger (reversibility) ----
+ledger:
+  trash_ttl_days: 30
+  blocking_gates: [payment, gmail_send]
+  undo_window_s: 90
+  session_replay: true
+  drive_revisions: true
+  git_force_push: false
+
+# ---- Focus ----
+focus:
+  default_minutes: 25
+  allowed_domains: []
+  nudge_cooldown_min: 10        # coalesced: 1 toast + 1 chrome/10m per kind
+  nudge_channels: {toast: true, chrome: true, voice: true, phone: true}
+  voice_after_drifts: 3         # voice nudge on 3rd+ drift
+  learn_patterns: true          # learn recurring distraction times
+  end_banner: true
+
+# ---- Books ----
+books:
+  chunk_size: 1000
+  chunk_overlap: 120
+  ocr: {docling: false, paddle: false, tesseract: true, max_pages_per_pass: 40}
+  max_file_mb: 0                # 0 = no restriction
+  embedding_batch: 64
+
+# ---- Genome / evolution ----
+genome:
+  nightly_utc: "22:30"
+  mutants: 3
+  gym_replay_turns: 200
+  canary_pct: 10
+  canary_hours: 24
+  auto_revert_on_regression: true
+  cassette_required: true
+
+# ---- Dreamstate ----
+dreamstate:
+  enabled: true
+  idle_after_min: 3
+  sample_memories: 3
+  max_spend_day_usd: 0.10
+  bank_cap: 40
+
+# ---- Budget ----
+budget:
+  daily_usd: 6.0
+  monthly_usd: 10.0

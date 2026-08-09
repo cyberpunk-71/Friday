@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Friday Sensor",
+  "version": "0.1.0",
+  "description": "FRIDAY-Δ MV3 sensor: logs every page you visit (working-set ring, 48h TTL), detects focus-mode drifts, and nudges you back with toasts / chrome notifications / voice.",
+  "permissions": ["storage", "notifications", "alarms", "tabs"],
+  "host_permissions": ["<all_urls>"],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "Friday Sensor",
+    "default_popup": "popup.html"
+  },
+  "options_ui": { "page": "options.html", "open_in_tab": false },
+  "icons": { "16": "icon16.png", "48": "icon48.png", "128": "icon128.png" }
+}

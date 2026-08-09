@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Friday–Δ</title>
+<link rel="stylesheet" href="/static/style.css"/>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🜲</text></svg>"/>
+</head>
+<body>
+<div id="app">
+  <aside id="sidebar">
+    <div class="brand">
+      <div class="logo">FRIDAY<span>–Δ</span></div>
+      <div class="tagline">event-sourced · one-pass · code-acting · git-evolving</div>
+    </div>
+    <nav id="nav">
+      <button class="nav-item active" data-view="chat">💬 Chat</button>
+      <button class="nav-item" data-view="tasks">🧩 Tasks</button>
+      <button class="nav-item" data-view="memory">🧠 Memory</button>
+      <button class="nav-item" data-view="focus">🎯 Focus</button>
+      <button class="nav-item" data-view="books">📚 Books</button>
+      <button class="nav-item" data-view="admin">⚙️ Admin</button>
+    </nav>
+    <div class="side-widgets">
+      <div id="focus-widget" class="widget hidden">
+        <div class="widget-title">FOCUS</div>
+        <div id="focus-ring"><svg viewBox="0 0 60 60"><circle class="ring-bg" cx="30" cy="30" r="26"/><circle class="ring-fg" id="focus-ring-fg" cx="30" cy="30" r="26"/></svg><span id="focus-time">25:00</span></div>
+        <div id="focus-drifts">drifts: 0</div>
+      </div>
+      <div class="widget">
+        <div class="widget-title">BUDGET</div>
+        <div class="budget-row"><span id="spend-today">$0.0000</span><span id="budget-total">/ $6.00</span></div>
+        <div class="bar"><div id="budget-bar" class="bar-fill"></div></div>
+        <div id="ask-budget" class="dim">ask budget: 2 left</div>
+      </div>
+      <div class="widget">
+        <div class="widget-title">SYSTEM</div>
+        <div id="sys-status" class="dim">loading…</div>
+      </div>
+    </div>
+  </aside>
+
+  <main id="main">
+    <!-- ============ CHAT ============ -->
+    <section id="view-chat" class="view active">
+      <div id="chat-header">
+        <div id="chat-title">Friday — one chat, everything inline</div>
+        <div id="chat-meta" class="dim"></div>
+      </div>
+      <div id="chat-scroll">
+        <div id="chat-stream"></div>
+      </div>
+      <div id="composer">
+        <div id="composer-voice" class="hidden">
+          <div id="voice-wave"><span></span><span></span><span></span><span></span><span></span></div>
+          <div id="voice-hint">listening… (speak now, tap ⏹ to send)</div>
+        </div>
+        <div class="composer-row">
+          <button id="btn-voice" class="icon-btn" title="Voice (hold or tap)">🎙</button>
+          <textarea id="composer-input" rows="1" placeholder="Talk to Friday… (research, tasks, memory, focus, books — one chat)"></textarea>
+          <button id="btn-send" class="send-btn">➤</button>
+        </div>
+        <div id="composer-hints" class="dim">try: “dark mode kar do” · “start focos 25m allow github” · “research phone undr 20k” · “my new deepseek api kes sk-xxx for research”</div>
+      </div>
+    </section>
+
+    <!-- ============ TASKS ============ -->
+    <section id="view-tasks" class="view">
+      <div class="panel-head">
+        <h2>Tasks</h2>
+        <div class="panel-actions">
+          <button id="tasks-refresh" class="btn">⟳ refresh</button>
+        </div>
+      </div>
+      <div id="task-kanban" class="kanban"></div>
+      <div id="task-detail" class="drawer hidden"></div>
+    </section>
+
+    <!-- ============ MEMORY ============ -->
+    <section id="view-memory" class="view">
+      <div class="panel-head"><h2>Memory</h2>
+        <div class="tabs">
+          <button class="tab active" data-mtab="atoms">Atoms</button>
+          <button class="tab" data-mtab="beliefs">Beliefs α/β</button>
+          <button class="tab" data-mtab="tensions">Tensions</button>
+          <button class="tab" data-mtab="loops">Open Loops</button>
+          <button class="tab" data-mtab="constraints">Constraints</button>
+          <button class="tab" data-mtab="graph">Graph</button>
+          <button class="tab" data-mtab="explain">Explain</button>
+          <button class="tab" data-mtab="sql">Agent-SQL</button>
+        </div>
+      </div>
+      <div id="memory-body">
+        <div id="mtab-atoms" class="mtab active">
+          <div class="toolbar">
+            <input id="atom-search" placeholder="search atoms…"/><select id="atom-kind"></select>
+          </div>
+          <div id="atom-list" class="cards"></div>
+        </div>
+        <div id="mtab-beliefs" class="mtab"><div id="belief-list" class="cards"></div></div>
+        <div id="mtab-tensions" class="mtab"><div id="tension-list" class="cards"></div></div>
+        <div id="mtab-loops" class="mtab"><div id="loop-list" class="cards"></div></div>
+        <div id="mtab-constraints" class="mtab"><div id="constraint-list" class="cards"></div></div>
+        <div id="mtab-graph" class="mtab"><div id="graph-box"></div><div id="graph-list"></div></div>
+        <div id="mtab-explain" class="mtab">
+          <div class="toolbar"><input id="explain-q" placeholder="why did you remember X?"/><button id="explain-go" class="btn">explain</button></div>
+          <div id="explain-out"></div>
+        </div>
+        <div id="mtab-sql" class="mtab">
+          <div class="toolbar"><input id="sql-q" placeholder="SELECT … (read-only over DELTA views)"/><button id="sql-go" class="btn">run</button></div>
+          <div id="sql-out"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ FOCUS ============ -->
+    <section id="view-focus" class="view">
+      <div class="panel-head"><h2>Focus</h2></div>
+      <div class="focus-grid">
+        <div class="card">
+          <h3>Session</h3>
+          <div id="focus-session-controls">
+            <input id="focus-minutes" type="number" value="25" min="1" max="180"/> min
+            <input id="focus-allow" placeholder="allow domains (comma)"/><br/>
+            <button id="focus-start" class="btn primary">▶ Start</button>
+            <button id="focus-stop" class="btn danger hidden">■ Stop</button>
+          </div>
+          <div id="focus-live" class="dim"></div>
+        </div>
+        <div class="card">
+          <h3>Learned patterns</h3>
+          <div id="focus-learned"></div>
+        </div>
+        <div class="card wide">
+          <h3>Session history</h3>
+          <div id="focus-history"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ BOOKS ============ -->
+    <section id="view-books" class="view">
+      <div class="panel-head"><h2>Books</h2>
+        <div class="panel-actions">
+          <label class="btn file-btn">⬆ Upload (no size limit)
+            <input id="book-file" type="file" accept=".pdf,.txt,.epub" hidden/>
+          </label>
+        </div>
+      </div>
+      <div id="book-list" class="cards"></div>
+      <div id="book-reader" class="drawer hidden"></div>
+    </section>
+
+    <!-- ============ ADMIN ============ -->
+    <section id="view-admin" class="view">
+      <div class="panel-head"><h2>Admin</h2>
+        <div class="tabs">
+          <button class="tab active" data-atab="overview">Overview</button>
+          <button class="tab" data-atab="params">Parameters</button>
+          <button class="tab" data-atab="models">Models & Keys</button>
+          <button class="tab" data-atab="integrations">One-Click</button>
+          <button class="tab" data-atab="spend">Expenses</button>
+          <button class="tab" data-atab="turns">Turns</button>
+          <button class="tab" data-atab="genome">Genome</button>
+        </div>
+      </div>
+      <div id="admin-body">
+        <div id="atab-overview" class="atab active"><div id="admin-overview"></div></div>
+        <div id="atab-params" class="atab">
+          <div class="toolbar"><input id="param-search" placeholder="search parameter…"/><button id="param-save" class="btn primary">Save changes</button></div>
+          <div id="param-tree"></div>
+        </div>
+        <div id="atab-models" class="atab">
+          <div class="card">
+            <h3>Model configuration — one click</h3>
+            <div class="form-row">
+              <select id="mc-provider"><option value="deepseek">DeepSeek</option></select>
+              <select id="mc-scope"><option value="default">default (chat)</option><option value="research">research</option><option value="voice">voice</option><option value="search">search</option></select>
+              <input id="mc-key" type="password" placeholder="sk-…"/>
+              <button id="mc-save" class="btn primary">Configure</button>
+              <button id="mc-test" class="btn">Test</button>
+            </div>
+            <div id="mc-result"></div>
+          </div>
+          <div id="provider-keys" class="cards"></div>
+        </div>
+        <div id="atab-integrations" class="atab">
+          <div class="card"><h3>One-click integrations</h3>
+            <div class="form-row">
+              <select id="oc-kind"><option value="extension">MV3 extension (page logger + focus nudge)</option><option value="mobile">Mobile monitoring</option><option value="search">Search provider (Tavily)</option><option value="voice">Voice provider (Groq)</option></select>
+              <input id="oc-value" placeholder="value (e.g. tavily key / URL)"/>
+              <button id="oc-go" class="btn primary">Enable</button>
+            </div>
+            <div id="oc-result"></div>
+          </div>
+        </div>
+        <div id="atab-spend" class="atab"><div id="spend-chart"></div><div id="spend-table"></div></div>
+        <div id="atab-turns" class="atab"><div id="turns-table"></div></div>
+        <div id="atab-genome" class="atab">
+          <div class="card"><h3>Genome git log — the SELF</h3><div id="genome-log"></div></div>
+          <div class="card"><h3>Skills (73 Donna procedures → genome)</h3><div id="genome-skills"></div></div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="toast-stack"></div>
+<div id="chrome-modal" class="hidden"><div id="chrome-modal-box"></div></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

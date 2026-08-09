@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+data/
+backups/
+models/
+*.zip
+vm_diagnostics/
+.pytest_cache/
+.ruff_cache/
+*.db
+*.db-wal
+*.db-shm
+extension/.pem
