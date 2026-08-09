@@ -173,7 +173,7 @@ function handleChatEvent(ev, typing, setReplyHtml) {
       if (!typing.isConnected) { typing = typingIndicator(); }
       const bubble = typing.querySelector(".bubble");
       if (!bubble) return;
-      replyHtml = (replyHtml || "") + ev.text;
+      setReplyHtml((replyHtml || "") + ev.text);
       bubble.innerHTML = md(replyHtml);
       scrollChat();
       break;
