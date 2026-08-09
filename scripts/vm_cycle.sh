@@ -477,6 +477,28 @@ op_friday_chattest() {
   ok friday_chattest
 }
 
+op_friday_eval() {
+  log friday_eval
+  local outdir="$RUNTIME/data/eval_report"
+  rm -rf "$outdir" 2>/dev/null || true
+  # run the 50-scenario eval suite against the live app (real DeepSeek)
+  ( cd "$RUNTIME" && .venv/bin/python tests/eval_suite.py --base "http://127.0.0.1:${PORT}" --out "$outdir" 2>&1 ) | tail -70
+  # copy report into workspace so it gets pushed back
+  mkdir -p "$WS/vm_diagnostics/eval"
+  cp -r "$outdir"/. "$WS/vm_diagnostics/eval/" 2>/dev/null || true
+  if [ -f "$outdir/eval_report.json" ]; then
+    python3 -c "
+import json
+d=json.load(open('$outdir/eval_report.json'))
+print('EVAL_SUMMARY: %d/%d passed in %ds' % (d['passed'], d['scenarios'], d['elapsed_s']))
+" | while IFS= read -r l; do OUT="${OUT}${l}\n"; done
+    ok friday_eval
+  else
+    say "eval report missing — suite crashed"
+    fail friday_eval
+  fi
+}
+
 op_friday_remove() {
   log friday_remove
   sudo systemctl stop "$SVC" "$WORKER" 2>/dev/null
@@ -518,6 +540,7 @@ case "$CMD" in
   friday_diagnose)    run_ops friday_diagnose ;;
   friday_netcheck)    run_ops friday_netcheck ;;
   friday_chattest*)  FRIDAY_TEST_QUERY="${CMD#friday_chattest:}"; run_ops friday_chattest ;;
+  friday_eval)         run_ops friday_eval ;;
   friday_fix)         run_ops friday_fix ;;
   friday_tunnel)      run_ops friday_tunnel ;;
   friday_remove)      run_ops friday_remove ;;

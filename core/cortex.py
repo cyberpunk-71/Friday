@@ -151,6 +151,106 @@ class Cortex:
         return result
 
     # ------------------------------------------------------------------ #
+    # DEEP RESEARCH — the tool-use loop (real function calling)
+    # ------------------------------------------------------------------ #
+    async def _deep_research(self, text: str, sense: dict, city: str) -> dict:
+        """Multi-round loop: model proposes web_search/web_read/memory_recall
+        → we execute → feed results back → repeat (max 3 rounds) → the final
+        model call synthesizes. Returns {grounding: str, rounds: int, cost}.
+        Falls back to deterministic search+read when the provider lacks tools."""
+        rounds = 0
+        cost = 0.0
+        sys_p = self._system_prompt(sense)
+        messages = [{"role": "system", "content": sys_p},
+                    {"role": "user", "content":
+                        f"RESEARCH THE FOLLOWING THOROUGHLY using tools. "
+                        f"City context: {city}. Question: {text[:2500]}"}]
+        grounding_parts: list[str] = []
+        tool_exec = {
+            "web_search": lambda args: self._tool_search(args.get("query", "")),
+            "web_read": lambda args: self._tool_read(args.get("url", "")),
+            "memory_recall": lambda args: self._tool_recall(args.get("query", "")),
+        }
+        try:
+            while rounds < 3:
+                try:
+                    res = await self.llm.complete_tools(messages, TOOL_SCHEMAS,
+                                                        temperature=0.3)
+                except RuntimeError:
+                    break  # network down → deterministic fallback below
+                cost += 0.0002
+                tcs = res.get("tool_calls") or []
+                if not tcs:
+                    # model decided it's done — synthesize
+                    if res.get("content"):
+                        grounding_parts.append("SYNTHESIS: " + res["content"][:2000])
+                    break
+                msgs_append: list[dict] = []
+                for tc in tcs:
+                    name = tc.get("name", "")
+                    try:
+                        args = json.loads(tc.get("arguments") or "{}")
+                    except Exception:
+                        args = {}
+                    fn = tool_exec.get(name)
+                    if not fn:
+                        continue
+                    out = await fn(args)
+                    rounds += 1
+                    grounding_parts.append(f"[{name} {args.get('query') or args.get('url')}]\n{out}")
+                    msgs_append.append({"role": "tool", "tool_call_id": tc.get("id", "sim"),
+                                        "name": name, "content": out[:3000]})
+                if not msgs_append:
+                    break
+                messages.extend(msgs_append)
+        except Exception:
+            pass
+        if not grounding_parts:
+            # deterministic fallback: search + read top 2
+            try:
+                res = await self.search.search(self.hermes._core_query(text, city), 5)
+                grounding_parts.append("[web_search deterministic]\n" +
+                                       json.dumps(res[:5], ensure_ascii=False))
+                for r in res[:2]:
+                    try:
+                        from .providers import web_read
+                        txt = await web_read(r["url"], 3000)
+                        if txt:
+                            grounding_parts.append(f"[web_read {r['url']}]\n{txt[:2000]}")
+                            rounds += 1
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        return {"grounding": "\n\n".join(grounding_parts)[:8000],
+                "rounds": rounds, "cost": cost}
+
+    async def _tool_search(self, query: str) -> str:
+        try:
+            res = await self.search.search(query, 5)
+            if not res:
+                return "no results"
+            return json.dumps([{k: r.get(k, "")[:200] for k in ("title", "url", "snippet")}
+                               for r in res[:5]], ensure_ascii=False)
+        except Exception as e:
+            return f"search error: {str(e)[:120]}"
+
+    async def _tool_read(self, url: str) -> str:
+        try:
+            from .providers import web_read
+            txt = await web_read(url, 4000)
+            return txt or "empty page"
+        except Exception as e:
+            return f"read error: {str(e)[:120]}"
+
+    def _tool_recall(self, query: str) -> str:
+        try:
+            r = self.loom.recall(query, k=6)
+            return json.dumps([s["text"] for s in r["slots"]], ensure_ascii=False)
+        except Exception as e:
+            return f"recall error: {str(e)[:120]}"
+
+    # ------------------------------------------------------------------ #
     # SPEAK
     # ------------------------------------------------------------------ #
     def _system_prompt(self, sense: dict) -> str:
@@ -287,6 +387,9 @@ class Cortex:
             )
         if pf and pf.web:
             user_msg += f"\n\nLIVE PAGE SNIPPET (BookMyShow/events):\n{pf.web[:2500]}"
+        # deep-research grounding (multi-round tool loop output)
+        if getattr(self, "_deep_grounding", ""):
+            user_msg += f"\n\nDEEP RESEARCH GROUNDING (multi-round tool results):\n{self._deep_grounding[:7000]}"
         messages.append({"role": "user", "content": user_msg})
         buffer, ctrl, prose_started = "", None, False
         stream = self.llm.stream(
@@ -714,6 +817,19 @@ class Cortex:
         sense = await asyncio.to_thread(self._sense, text, book_id)
         city_hint = self._city_from_slots(sense.get("slots", []))
         self.hermes.prefire_state = await self.hermes.prefire(text, city=city_hint)
+        # DEEP RESEARCH: complex questions get the multi-round tool loop.
+        # Deterministic short-circuits (config/focus/tracker/reminder/key) are
+        # already handled above, so this runs for real questions only.
+        self._deep_grounding = ""
+        self._deep_rounds = 0
+        _is_deep = (len(text) > 25 and bool(re.search(
+            r"(research|compare|deep|analy|why|how|what|who|best|recommend|"
+            r"evaluate|explain|difference|vs|versus|investigate|find out|"
+            r"events|weather|price|history|guide|review)", text.lower())))
+        if _is_deep:
+            dr = await self._deep_research(text, sense, city_hint)
+            self._deep_grounding = dr["grounding"]
+            self._deep_rounds = dr["rounds"]
         # diagnostic: what did the pre-fire actually produce this turn?
         _pf = self.hermes.prefire_state
         self.db.set_setting("diag.last_prefire", json.dumps({

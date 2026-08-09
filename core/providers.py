@@ -127,6 +127,41 @@ class DeepSeekProvider(LLMProvider):
         except httpx.ConnectError as e:
             raise RuntimeError(f"network unreachable for {self.name}: {e}") from e
 
+    async def complete_tools(self, messages: list[dict], tools: list[dict],
+                             temperature: float = 0.3, max_tokens: int = 600,
+                             tool_choice: str | None = None) -> dict:
+        """OpenAI-compatible function calling. Returns
+        {"content": str, "tool_calls": [{"id","name","arguments"}], "finish": str}"""
+        body: dict = {
+            "model": self.model,
+            "messages": messages,
+            "tools": tools,
+            "stream": False,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        if tool_choice:
+            body["tool_choice"] = tool_choice
+        try:
+            resp = await self.client().post("/chat/completions", json=body,
+                                            headers={"Authorization": f"Bearer {self.api_key}"})
+            if resp.status_code != 200:
+                err = resp.text[:400]
+                raise RuntimeError(f"deepseek {resp.status_code}: {err}")
+            obj = resp.json()
+            msg = obj["choices"][0]["message"]
+            out = {"content": msg.get("content") or "", "finish": obj["choices"][0].get("finish_reason", ""),
+                   "tool_calls": []}
+            for tc in (msg.get("tool_calls") or []):
+                out["tool_calls"].append({
+                    "id": tc.get("id", ""),
+                    "name": tc.get("function", {}).get("name", ""),
+                    "arguments": tc.get("function", {}).get("arguments", "{}"),
+                })
+            return out
+        except httpx.ConnectError as e:
+            raise RuntimeError(f"network unreachable for {self.name}: {e}") from e
+
 
 # --------------------------------------------------------------------------- #
 # Offline simulated provider — deterministic, exercises the whole pipeline.
@@ -154,6 +189,25 @@ class SimProvider(LLMProvider):
         if json_mode:
             return self._jsonify(text)
         return text
+
+    async def complete_tools(self, messages: list[dict], tools: list[dict],
+                             temperature: float = 0.3, max_tokens: int = 600,
+                             tool_choice: str | None = None) -> dict:
+        """Deterministic tool loop: if the user message looks research-y,
+        emit a web_search tool call (exercises the real loop offline)."""
+        user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
+        low = user.lower()
+        # after tool results are present, synthesize instead of calling again
+        has_tool_result = any(m.get("role") == "tool" for m in messages)
+        if has_tool_result:
+            return {"content": self._render(messages), "finish": "stop", "tool_calls": []}
+        if re.search(r"(research|search|find|compare|events|who is|what|weather|price|"
+                     r"latest|news|how much|best|recommend|deep)", low):
+            q = re.sub(r"^.*?(research|search|find|compare)\s*", "", low)[:120] or low[:120]
+            return {"content": "", "finish": "tool_calls",
+                    "tool_calls": [{"id": "call_sim_1", "name": "web_search",
+                                    "arguments": json.dumps({"query": q.strip()})}]}
+        return {"content": self._render(messages), "finish": "stop", "tool_calls": []}
 
     # ---- render one deterministic reply ----
     def _render(self, messages: list[dict]) -> str:
@@ -398,6 +452,32 @@ class SimProvider(LLMProvider):
             except Exception:
                 pass
         return json.dumps({"result": text})
+
+
+# --------------------------------------------------------------------------- #
+# Tool schemas for the deep-research tool loop (shared by real + sim)
+# --------------------------------------------------------------------------- #
+TOOL_SCHEMAS: list[dict] = [
+    {"type": "function",
+     "function": {"name": "web_search",
+                  "description": "Live web search. Returns titles, URLs, snippets.",
+                  "parameters": {"type": "object",
+                                 "properties": {"query": {"type": "string",
+                                                          "description": "search query"}},
+                                 "required": ["query"]}}},
+    {"type": "function",
+     "function": {"name": "web_read",
+                  "description": "Read a webpage's full text content by URL.",
+                  "parameters": {"type": "object",
+                                 "properties": {"url": {"type": "string"}},
+                                 "required": ["url"]}}},
+    {"type": "function",
+     "function": {"name": "memory_recall",
+                  "description": "Recall what you know about a topic/person from memory.",
+                  "parameters": {"type": "object",
+                                 "properties": {"query": {"type": "string"}},
+                                 "required": ["query"]}}},
+]
 
 
 def make_llm() -> LLMProvider:
