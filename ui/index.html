@@ -174,6 +174,7 @@
           <button class="tab" data-atab="spend">Expenses</button>
           <button class="tab" data-atab="turns">Turns</button>
           <button class="tab" data-atab="genome">Genome</button>
+          <button class="tab" data-atab="eval">Eval 50</button>
         </div>
       </div>
       <div id="admin-body">
@@ -220,6 +221,17 @@
         <div id="atab-genome" class="atab">
           <div class="card"><h3>Genome git log — the SELF</h3><div id="genome-log"></div></div>
           <div class="card"><h3>Skills (73 Donna procedures → genome)</h3><div id="genome-skills"></div></div>
+        </div>
+        <div id="atab-eval" class="atab">
+          <div class="card"><h3>📊 Eval — 50 complex scenarios (proof of intelligence)</h3>
+            <div id="eval-summary"></div>
+            <div class="form-row" style="margin-top:12px">
+              <a class="btn primary" href="/api/eval/file/eval_report.html" download>⬇ Download HTML report</a>
+              <a class="btn" href="/api/eval/file/eval_report.json" download>⬇ JSON</a>
+              <a class="btn" href="/api/eval/file/eval_chat_log.md" download>⬇ Full chat log</a>
+            </div>
+            <div id="eval-details"></div>
+          </div>
         </div>
       </div>
     </section>

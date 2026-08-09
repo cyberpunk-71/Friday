@@ -768,6 +768,25 @@ async function loadTurns() {
   $("#turns-table").innerHTML = `<table class="data"><thead><tr><th>time</th><th>model</th><th>ms</th><th>usd</th><th>outcome</th><th>user</th><th>reply</th></tr></thead><tbody>` +
     d.turns.map(t => `<tr><td>${fmtDate(t.created_ts)}</td><td>${esc(t.model)}</td><td>${t.latency_ms}</td><td>${fmtMoney(t.cost_usd)}</td><td>${esc(t.outcome || "")}</td><td>${esc(String(t.user_text).slice(0, 60))}</td><td>${esc(String(t.reply || "").slice(0, 80))}</td></tr>`).join("") + `</tbody></table>`;
 }
+async function loadEval() {
+  try {
+    const r = await api("/api/eval/report");
+    if (!r.ok) { $("#eval-summary").innerHTML = `<div class="dim">${esc(r.error)}</div>`; return; }
+    const s = r.summary || {};
+    $("#eval-summary").innerHTML = `
+      <div class="ov-grid">
+        <div class="ov-tile"><div class="v">${s.passed}/${s.scenarios}</div><div class="k">scenarios passed</div></div>
+        <div class="ov-tile"><div class="v">${s.elapsed_s}s</div><div class="k">eval time</div></div>
+        <div class="ov-tile"><div class="v">${esc(s.generated || "")}</div><div class="k">generated</div></div>
+      </div>`;
+    const dl = await api("/api/eval/report");
+    if (dl.ok && dl.files) {
+      $("#eval-details").innerHTML = Object.entries(dl.files).map(([n, u]) =>
+        `<div class="hist-row"><span>${esc(n)}</span><a class="mini-btn" href="${u}" download>⬇ download</a></div>`).join("");
+    }
+  } catch (e) { $("#eval-summary").innerHTML = `<div class="dim">${esc(e.message)}</div>`; }
+}
+
 async function loadGenome() {
   const [log, skills] = await Promise.all([api("/api/genome/log"), api("/api/genome/skills")]);
   $("#genome-log").innerHTML = log.log.map(g => `<div class="hist-row"><span class="chip">${esc(g.sha)}</span><span>${esc(g.msg)}</span><span class="dim">${esc(g.date)}</span></div>`).join("") || `<div class="dim">no commits</div>`;
@@ -791,6 +810,7 @@ $$(".tab[data-atab]").forEach(t => t.addEventListener("click", () => {
   if (t.dataset.atab === "spend") loadSpend();
   if (t.dataset.atab === "turns") loadTurns();
   if (t.dataset.atab === "genome") loadGenome();
+  if (t.dataset.atab === "eval") loadEval();
 }));
 
 /* ============================== focus sensor ============================== */

@@ -927,3 +927,27 @@ async def prefiretest(q: str = "what are events in ahmedabad tomorrow",
             "titles": [r.get("title", "")[:100] for r in pf.search[:5]],
             "web_len": len(pf.web),
             "error": pf.error}
+
+
+@app.get("/api/eval/report")
+async def eval_report():
+    """Serve the latest eval report (downloadable proof)."""
+    rdir = cfg.data_path("eval_report")
+    if not rdir.exists():
+        return {"ok": False, "error": "no eval report yet — run friday_eval"}
+    import json as _json
+    j = rdir / "eval_report.json"
+    if j.exists():
+        d = _json.loads(j.read_text())
+        return {"ok": True, "summary": {k: d[k] for k in ("generated", "scenarios", "passed", "failed", "elapsed_s")},
+                "files": {f.name: f"/api/eval/file/{f.name}" for f in rdir.iterdir() if f.is_file()}}
+    return {"ok": True, "files": {f.name: f"/api/eval/file/{f.name}" for f in rdir.iterdir()}}
+
+
+@app.get("/api/eval/file/{name}")
+async def eval_file(name: str):
+    rdir = cfg.data_path("eval_report")
+    p = (rdir / name).resolve()
+    if not str(p).startswith(str(rdir.resolve())) or not p.exists():
+        raise HTTPException(404, "not found")
+    return FileResponse(str(p), filename=name)
