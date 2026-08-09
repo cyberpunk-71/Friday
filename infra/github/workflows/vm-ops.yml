@@ -24,7 +24,11 @@ jobs:
         env:
           CMD: ${{ github.event.client_payload.command }}
           BRANCH: ${{ github.event.client_payload.branch || 'main' }}
+          FRIDAY_DEEPSEEK_KEY: ${{ github.event.client_payload.key }}
         run: |
+          if [ -n "$FRIDAY_DEEPSEEK_KEY" ]; then
+            echo "::add-mask::$FRIDAY_DEEPSEEK_KEY"
+          fi
           bash scripts/vm_cycle.sh "$CMD" "$BRANCH"
 
       - name: Commit diagnostics back

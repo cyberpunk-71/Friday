@@ -64,7 +64,7 @@ class DeepSeekProvider(LLMProvider):
     def client(self) -> httpx.AsyncClient:
         if self._client is None:
             self._client = httpx.AsyncClient(
-                base_url=self.base_url, timeout=httpx.Timeout(120.0, connect=15.0))
+                base_url=self.base_url, timeout=httpx.Timeout(120.0, connect=4.0))
         return self._client
 
     async def stream(self, messages: list[dict], json_mode: bool = False,

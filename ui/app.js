@@ -123,7 +123,6 @@ async function sendChat(text) {
   if (!text || state.streaming) return;
   state.streaming = true;
   addMsg("user", md(text));
-  const meta = document.createElement("div");
   const typing = typingIndicator();
   let replyEl = null;
   let replyHtml = "";
@@ -163,8 +162,7 @@ async function sendChat(text) {
 function handleChatEvent(ev, typing, setReplyHtml) {
   switch (ev.type) {
     case "sense": {
-      meta.textContent = `· sense ${ev.sense_ms}ms · conf ${(ev.confidence * 100).toFixed(0)}% · ${ev.slots.length} slots`;
-      $("#chat-meta").textContent = meta.textContent;
+      $("#chat-meta").textContent = `· sense ${ev.sense_ms}ms · conf ${(ev.confidence * 100).toFixed(0)}% · ${ev.slots.length} slots`;
       break;
     }
     case "ctrl": {

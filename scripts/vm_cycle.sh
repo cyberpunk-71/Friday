@@ -48,6 +48,26 @@ wait_health() {
 }
 
 # ---------------------------------------------------------------- ops -------
+op_friday_setkey() {
+  log friday_setkey
+  local key="${FRIDAY_DEEPSEEK_KEY:-}"
+  if [ -z "$key" ]; then
+    say "no FRIDAY_DEEPSEEK_KEY provided — skipping (key stays as-is)"
+    ok friday_setkey; return
+  fi
+  sudo mkdir -p "$RUNTIME"
+  if [ -f "$RUNTIME/.env" ]; then
+    sed -i "s|^DEEPSEEK_API_KEY=.*|DEEPSEEK_API_KEY=$key|" "$RUNTIME/.env" 2>/dev/null || true
+    grep -q "^DEEPSEEK_API_KEY=" "$RUNTIME/.env" 2>/dev/null || echo "DEEPSEEK_API_KEY=$key" >> "$RUNTIME/.env"
+  else
+    echo "DEEPSEEK_API_KEY=$key" > "$RUNTIME/.env"
+  fi
+  grep -q "^DEEPSEEK_MODEL=" "$RUNTIME/.env" 2>/dev/null || echo "DEEPSEEK_MODEL=deepseek-chat" >> "$RUNTIME/.env"
+  grep -q "^DEEPSEEK_BASE_URL=" "$RUNTIME/.env" 2>/dev/null || echo "DEEPSEEK_BASE_URL=https://api.deepseek.com/v1" >> "$RUNTIME/.env"
+  say "DEEPSEEK_API_KEY configured in $RUNTIME/.env (masked: ••••${key: -4})"
+  ok friday_setkey
+}
+
 op_friday_deploy() {
   log friday_deploy
   if [ ! -d "$WS/core" ]; then fail friday_deploy; say "no friday sources in workspace"; return; fi
@@ -198,6 +218,8 @@ CMD="${1:-}"
 BRANCH="${2:-$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)}"
 
 case "$CMD" in
+  friday_setup)       run_ops friday_setkey friday_deploy friday_test friday_nginx ;;
+  friday_setkey)      run_ops friday_setkey ;;
   friday_deploy)      run_ops friday_deploy friday_test friday_nginx ;;
   friday_health)      run_ops friday_health ;;
   friday_test)        run_ops friday_test ;;

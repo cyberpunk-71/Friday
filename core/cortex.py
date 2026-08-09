@@ -95,6 +95,10 @@ class Cortex:
         self.heart = Heart(self.db)
         self.llm = llm or make_llm()
         self.search = search or make_search()
+        # DeepSeek is the default for EVERYTHING when a key is configured:
+        # SETTLE extraction, task planning, and repair all use the same model.
+        if self.llm.name == "deepseek":
+            self.river.extractor = LLMExtractor(self.llm)
         self.hands = Hands(self.db, self.search, None if self.llm.name == "sim" else self.llm)
         self._jobs: dict[str, asyncio.Task] = {}
 
