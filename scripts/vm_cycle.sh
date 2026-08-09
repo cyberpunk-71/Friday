@@ -423,23 +423,34 @@ op_friday_tunnel() {
   sudo cp "$UNITFILE" /etc/systemd/system/friday-tunnel.service
   sudo systemctl daemon-reload
   sudo systemctl enable friday-tunnel 2>/dev/null
+  # clear old journal so we only see the NEW instance's URL
+  sudo journalctl --rotate 2>/dev/null || true
+  sudo journalctl --vacuum-time=1s 2>/dev/null || true
+  sudo pkill -f "cloudflared tunnel" 2>/dev/null || true
+  sleep 2
   sudo systemctl restart friday-tunnel
-  # wait for the tunnel URL in the journal (quick tunnels print it on start)
+  # wait up to 90s for the fresh URL in the journal
   URL=""
-  for i in $(seq 1 15); do
-    sleep 2
-    URL=$(sudo journalctl -u friday-tunnel -n 100 --no-pager 2>/dev/null | grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' | tail -1)
+  for i in $(seq 1 30); do
+    sleep 3
+    URL=$(sudo journalctl -u friday-tunnel -n 200 --no-pager 2>/dev/null | grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' | tail -1)
     [ -n "$URL" ] && break
   done
   if [ -n "$URL" ]; then
     say "TUNNEL_URL=${URL}"
     echo "$URL" | sudo tee /opt/friday/tunnel_url >/dev/null 2>&1 || true
-    code=$(curl -s -o /dev/null -w '%{http_code}' -m 15 "${URL}/api/health" 2>/dev/null)
+    # health with retries (tunnel needs a few seconds to register)
+    code="000"
+    for i in $(seq 1 6); do
+      code=$(curl -s -o /dev/null -w '%{http_code}' -m 15 "${URL}/api/health" 2>/dev/null)
+      [ "$code" = "200" ] && break
+      sleep 5
+    done
     say "tunnel_health_check=${URL}/api/health -> ${code:-000}"
     if [ "$code" = "200" ]; then ok friday_tunnel; else fail friday_tunnel; fi
   else
     say "no tunnel URL found in journal - last lines:"
-    sudo journalctl -u friday-tunnel -n 15 --no-pager 2>/dev/null | tail -15 | while read -r l; do say "$l"; done
+    sudo journalctl -u friday-tunnel -n 30 --no-pager 2>/dev/null | tail -30 | while read -r l; do say "$l"; done
     fail friday_tunnel
   fi
 }
