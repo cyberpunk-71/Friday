@@ -30,7 +30,11 @@
     <div class="side-widgets">
       <div id="focus-widget" class="widget hidden">
         <div class="widget-title">FOCUS</div>
-        <div id="focus-ring"><svg viewBox="0 0 60 60"><circle class="ring-bg" cx="30" cy="30" r="26"/><circle class="ring-fg" id="focus-ring-fg" cx="30" cy="30" r="26"/></svg><span id="focus-time">25:00</span></div>
+        <div id="focus-ring"><svg viewBox="0 0 60 60">
+          <defs><linearGradient id="gradRing" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#6ea8ff"/><stop offset="100%" stop-color="#a78bfa"/>
+          </linearGradient></defs>
+          <circle class="ring-bg" cx="30" cy="30" r="26"/><circle class="ring-fg" id="focus-ring-fg" cx="30" cy="30" r="26"/></svg><span id="focus-time">25:00</span></div>
         <div id="focus-drifts">drifts: 0</div>
       </div>
       <div class="widget">
