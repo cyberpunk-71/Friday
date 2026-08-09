@@ -72,6 +72,14 @@ class Hermes:
         try:
             # strip the user's chatty bits; search the core question
             q = self._core_query(text, city)
+            # tiny follow-ups ("search", "yes", "go") → reuse the last real
+            # question as the query so the search is actually meaningful
+            if len(q) < 6 or q.lower() in ("search", "yes", "go", "ok", "run",
+                                            "look", "find", "events"):
+                last = self.db.q1(
+                    "SELECT user_text FROM turns ORDER BY turn_id DESC LIMIT 1")
+                if last and last["user_text"]:
+                    q = self._core_query(last["user_text"], city)
             pf.search = await self.search.search(q, 5)
             pf.burned_usd = 0.0001
         except Exception:
@@ -107,23 +115,44 @@ class Hermes:
         return pf
 
     @staticmethod
+    def _fix_cities(t: str) -> str:
+        """Fuzzy city fix: any token close to a known Indian city gets
+        normalized — catches 'ahemedbad', 'ahmedaabd', 'amdavad', 'banglore'."""
+        import difflib
+        CITIES = ["ahmedabad", "gandhinagar", "mumbai", "delhi", "pune",
+                  "hyderabad", "bangalore", "chennai", "kolkata", "jaipur",
+                  "surat", "vadodara", "goa", "indore", "lucknow", "kerala"]
+        words = re.findall(r"[a-z]{4,}", t.lower())
+        for w in set(words):
+            close = difflib.get_close_matches(w, CITIES, n=1, cutoff=0.72)
+            if close:
+                t = re.sub(rf"\b{w}\b", close[0], t, flags=re.I)
+        for bad, good in CITY_FIX.items():
+            if bad in t.lower():
+                t = re.sub(rf"\b{bad}\b", good, t, flags=re.I)
+        return t
+
+    @staticmethod
     def _core_query(text: str, city: str = "ahmedabad") -> str:
         t = re.sub(r"\b(hey|friday|please|pls|can you|could you|i want|i need|keep an eye on|"
                    r"search (on|for|up)|look (for|up)|tell me|find me|show me|suggest me|"
-                   r"who is|who's|what is|what's|current|the)\b",
+                   r"who is|who's|what is|what are|whats|what'?s|current|the|for|"
+                   r"any|some|me|about|with)\b",
                    " ", text, flags=re.I)
-        # fix city typos/aliases
-        low = t.lower()
-        for bad, good in CITY_FIX.items():
-            if bad in low:
-                t = re.sub(rf"\b{bad}\b", good, t, flags=re.I)
+        # time words don't help the news query — drop them (the model still
+        # knows from context that the user means tomorrow)
+        t = re.sub(r"\b(today|tonight|tomorrow|this weekend|this week|right now|"
+                   r"happening|going on|available|listings?|please|pls|now)\b",
+                   " ", t, flags=re.I)
+        # fix city typos/aliases (fuzzy)
+        t = Hermes._fix_cities(t)
         t = re.sub(r"\s+", " ", t).strip()
         # city-less event/local queries get the home city appended so the
         # search is meaningful ("good shows" → "good shows in ahmedabad")
         tlow = t.lower()
         has_city = any(c in tlow for c in ("ahmedabad", "gandhinagar", "mumbai", "delhi",
                                            "pune", "hyderabad", "bangalore", "chennai",
-                                           "kolkata", "india"))
+                                           "kolkata", "jaipur", "surat", "goa"))
         if not has_city and EVENT_HINTS.search(t):
             t = f"{t} in {city}".strip()
         return t[:160]

@@ -233,3 +233,26 @@ def test_plan_validation_rejects_garbage(db):
     steps = asyncio.get_event_loop().run_until_complete(h.plan_task(tid, "x", {}))
     plan2 = json.loads(db.q1("SELECT plan_json FROM tasks WHERE task_id=?", (tid,))["plan_json"])
     assert all("friday." in s.get("code", "") for s in plan2), "garbage plan must be replaced"
+
+
+def test_fuzzy_city_typos():
+    from core.hermes import Hermes
+    for bad in ("ahmedaabd", "ahemedbad", "ahmedbad", "amdavad"):
+        q = Hermes._core_query(f"events in {bad} tomorrow", "ahmedabad")
+        assert "ahmedabad" in q and bad not in q, f"{bad} -> {q}"
+
+
+def test_tiny_followup_reuses_last_question(sim_seed, cortex, db):
+    """'search' after 'what events in ahmedabad' must search the last question."""
+    from core.obs import log_turn
+    from core.hermes import Hermes
+    import asyncio
+    from core.providers import SimSearch
+    log_turn("cor_f1", "what are events in ahmedabad tomorrow", "stuff",
+             100, 0, "sim", "sim", [])
+    h = Hermes(db, search=SimSearch())
+    pf = asyncio.get_event_loop().run_until_complete(h.prefire("search"))
+    # sim search returns fixtures for 'events in ahmedabad' — proving the
+    # query reused the last question instead of searching 'search'
+    joined = " ".join(r["title"].lower() for r in pf.search)
+    assert "ahmedabad" in joined or "weekend" in joined, joined
