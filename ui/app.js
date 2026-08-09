@@ -96,6 +96,8 @@ function switchView(v) {
 }
 
 /* ============================== chat engine ============================== */
+let streamingReply = "";   // module-level buffer for the in-flight reply
+
 function addMsg(role, html) {
   const wrap = document.createElement("div");
   wrap.className = "msg " + role;
@@ -122,10 +124,10 @@ async function sendChat(text) {
   text = (text || "").trim();
   if (!text || state.streaming) return;
   state.streaming = true;
+  streamingReply = "";
   addMsg("user", md(text));
   const typing = typingIndicator();
   let replyEl = null;
-  let replyHtml = "";
   const corr = "cor_" + Math.random().toString(16).slice(2, 10);
   try {
     const res = await fetch("/api/chat", {
@@ -148,7 +150,7 @@ async function sendChat(text) {
         for (const line of chunk.split("\n")) {
           if (!line.startsWith("data:")) continue;
           let ev; try { ev = JSON.parse(line.slice(5)); } catch (e) { continue; }
-          handleChatEvent(ev, typing, (h) => { replyHtml = h; });
+          handleChatEvent(ev, typing);
         }
       }
     }
@@ -159,7 +161,7 @@ async function sendChat(text) {
   state.streaming = false;
 }
 
-function handleChatEvent(ev, typing, setReplyHtml) {
+function handleChatEvent(ev, typing) {
   switch (ev.type) {
     case "sense": {
       $("#chat-meta").textContent = `· sense ${ev.sense_ms}ms · conf ${(ev.confidence * 100).toFixed(0)}% · ${ev.slots.length} slots`;
@@ -173,8 +175,8 @@ function handleChatEvent(ev, typing, setReplyHtml) {
       if (!typing.isConnected) { typing = typingIndicator(); }
       const bubble = typing.querySelector(".bubble");
       if (!bubble) return;
-      setReplyHtml((replyHtml || "") + ev.text);
-      bubble.innerHTML = md(replyHtml);
+      streamingReply += ev.text;
+      bubble.innerHTML = md(streamingReply);
       scrollChat();
       break;
     }
@@ -190,10 +192,11 @@ function handleChatEvent(ev, typing, setReplyHtml) {
       $("#chat-meta").textContent = `· ${ev.model} · ${ev.latency_ms}ms · ${fmtMoney(ev.cost_usd)} · ${ev.slots_used} slots`;
       const wrap = document.createElement("div");
       wrap.className = "msg friday";
-      wrap.innerHTML = `<div class="who">FRIDAY</div><div class="bubble">${md(ev.reply || "")}</div>`;
+      wrap.innerHTML = `<div class="who">FRIDAY</div><div class="bubble">${md(ev.reply || streamingReply || "")}</div>`;
       $("#chat-stream").appendChild(wrap);
       scrollChat();
-      state.chat.push({ role: "friday", text: ev.reply });
+      state.chat.push({ role: "friday", text: ev.reply || streamingReply });
+      streamingReply = "";
       break;
     }
   }
