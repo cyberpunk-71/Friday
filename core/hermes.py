@@ -140,8 +140,20 @@ class Hermes:
                    r"who is|who's|what is|what are|whats|what'?s|current|the|for|"
                    r"any|some|me|about|with)\b",
                    " ", text, flags=re.I)
-        # time words don't help the news query — drop them (the model still
-        # knows from context that the user means tomorrow)
+        # time words don't help the news query — but we DO want the actual
+        # date, so translate tomorrow/today/this weekend into a real date
+        tlow0 = t.lower()
+        date_hint = ""
+        import datetime
+        now = datetime.date.today()
+        if re.search(r"\btomorrow\b", tlow0):
+            date_hint = (now + datetime.timedelta(days=1)).strftime("%d %B %Y")
+        elif re.search(r"\b(today|tonight)\b", tlow0):
+            date_hint = now.strftime("%d %B %Y")
+        elif re.search(r"this weekend", tlow0):
+            # next Saturday
+            days = (5 - now.weekday()) % 7 or 7
+            date_hint = (now + datetime.timedelta(days=days)).strftime("%d %B %Y")
         t = re.sub(r"\b(today|tonight|tomorrow|this weekend|this week|right now|"
                    r"happening|going on|available|listings?|please|pls|now)\b",
                    " ", t, flags=re.I)
@@ -156,7 +168,9 @@ class Hermes:
                                            "kolkata", "jaipur", "surat", "goa"))
         if not has_city and EVENT_HINTS.search(t):
             t = f"{t} in {city}".strip()
-        return t[:160]
+        if date_hint:
+            t = f"{t} {date_hint}".strip()
+        return t[:180]
 
     # ------------------------------------------------------------------ #
     # governors
