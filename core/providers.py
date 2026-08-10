@@ -380,10 +380,20 @@ class GeminiProvider(LLMProvider):
                         if part.get("text"):
                             yield part["text"]
         except httpx.HTTPError as e:
-            # ReadError / ReadTimeout mid-stream (Google closes the connection
-            # on bad keys/models) must surface as RuntimeError so the cortex
-            # can fail over instead of dying silently
-            raise RuntimeError(f"{self.name} stream error: {type(e).__name__}: {e}") from e
+            # ReadError / ReadTimeout MID-STREAM (Google closes the SSE
+            # connection on some AQ keys even though the non-streaming
+            # endpoint works) — fall back to a single generateContent call
+            # instead of dying. Chat must work.
+            try:
+                await resp.aclose()
+            except Exception:
+                pass
+            text = await self.complete(messages, json_mode=json_mode,
+                                       temperature=temperature, max_tokens=max_tokens, **kw)
+            if text:
+                for i in range(0, len(text), 40):
+                    yield text[i:i + 40]
+            return
         finally:
             await resp.aclose()
 
