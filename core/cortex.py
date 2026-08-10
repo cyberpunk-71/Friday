@@ -69,6 +69,29 @@ def parse_ctrl(accumulated: str) -> tuple[dict | None, str]:
     return None, accumulated
 
 
+def strip_ctrl_json(text: str) -> str:
+    """Remove a leading ctrl-JSON block. Tolerant of the model's truncated
+    JSON (it often drops closing braces). Heuristic: a leading { ... } block
+    on the first line(s) containing '"ctrl"' gets removed entirely."""
+    t = text.lstrip()
+    if not t.startswith("{"):
+        return text
+    # scan to the LAST } on the first line (or first 2 lines) — the model's
+    # ctrl block is always one JSON blob at the very start
+    lines = t.split("\n", 2)
+    first = lines[0] if lines else t
+    if '"ctrl"' not in first:
+        return text
+    # find the last '}' in the first two lines
+    head = "\n".join(lines[:2])
+    last_close = head.rfind("}")
+    if last_close > 0 and head[:last_close].count("{") >= 1:
+        # verify it looks like our ctrl block: contains "depth" or "config_deltas"
+        if "depth" in head[:last_close] or "config_deltas" in head[:last_close] or "memory_writes" in head[:last_close]:
+            return text[last_close + 1:]
+    return text
+
+
 def strip_card_tags(prose: str) -> tuple[str, list[dict]]:
     """Extract <card>...</card> blocks from prose; return (clean_prose, cards)."""
     cards = []
@@ -927,12 +950,11 @@ class Cortex:
             yield ev
 
         reply = "".join(reply_parts)
-        # strip residual ctrl JSON blocks (model compliance gaps)
-        import re as _re
-        reply = _re.sub(r'\{\s*"ctrl"\s*:[^}]*\}', "", reply)
-        reply = _re.sub(r'^```json\s*\{\"ctrl\"[\s\S]*?\}```', "", reply)
-        reply = _re.sub(r'^\{"ctrl":\{.*?\}\}', "", reply)
-        reply = _re.sub(r'^\n+', "", reply)
+        # strip residual ctrl JSON blocks (model compliance gaps) — robust
+        reply = strip_ctrl_json(reply)
+        reply = re.sub(r'^```json\s*\n?', "", reply)
+        reply = strip_ctrl_json(reply)
+        reply = re.sub(r'^\n+', "", reply)
         reply, inline_cards = strip_card_tags(reply)
         cards.extend(inline_cards)
 

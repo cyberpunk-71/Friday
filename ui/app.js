@@ -177,9 +177,14 @@ function handleChatEvent(ev, typing) {
       if (!bubble) return;
       // filter out raw ctrl JSON blocks that the model sometimes emits
       let t = ev.text || "";
-      t = t.replace(/\{\s*"ctrl"\s*:[^}]*\}/g, "");
-      t = t.replace(/^```json\s*\{\"ctrl\"[\s\S]*?\}```/g, "");
-      t = t.replace(/^\{"ctrl":\{.*?\}\}/, "");
+      t = t.replace(/^```json\s*/, "");
+      if (t.trim().startsWith("{")) {
+        const first = t.split("\n")[0];
+        if (first.includes("ctrl") && (first.includes("depth") || first.includes("config_deltas") || first.includes("memory_writes"))) {
+          const nl = t.indexOf("\n");
+          t = nl >= 0 ? t.slice(nl) : "";
+        }
+      }
       if (!t) return;
       streamingReply += t;
       bubble.innerHTML = md(streamingReply);
