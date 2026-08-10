@@ -22,16 +22,26 @@ class Focus:
         return self.db.q1("SELECT * FROM focus_sessions WHERE status='active' "
                           "ORDER BY start_ts DESC LIMIT 1")
 
-    def start(self, minutes: int = 25, allow: list | None = None, voice: bool = True) -> dict:
+    def start(self, minutes: int = 25, allow: list | None = None, voice: bool = True,
+              task: str | None = None) -> dict:
         if self.active():
             return {"ok": False, "error": "session already active"}
+        # migrate: task label column (older DBs don't have it)
+        cols = [r["name"] for r in self.db.q("PRAGMA table_info(focus_sessions)")]
+        if "task" not in cols:
+            try:
+                self.db.exec("ALTER TABLE focus_sessions ADD COLUMN task TEXT")
+            except Exception:
+                pass
         sid = self.db.exec(
-            "INSERT INTO focus_sessions(start_ts,target_min,status,allow_domains,drift_count)"
-            " VALUES(?,?, 'active',?,0)",
-            (time.time(), minutes, json.dumps(allow or [])))
+            "INSERT INTO focus_sessions(start_ts,target_min,status,allow_domains,drift_count,task)"
+            " VALUES(?,?, 'active',?,0,?)",
+            (time.time(), minutes, json.dumps(allow or []), task or None))
         self.db.append_event("focus", "user", {"action": "start", "minutes": minutes,
-                                               "allow": allow or [], "session_id": sid})
-        return {"ok": True, "session_id": sid, "minutes": minutes, "ends_at": time.time() + minutes * 60}
+                                               "allow": allow or [], "task": task,
+                                               "session_id": sid})
+        return {"ok": True, "session_id": sid, "minutes": minutes,
+                "task": task, "ends_at": time.time() + minutes * 60}
 
     def stop(self) -> dict:
         s = self.active()

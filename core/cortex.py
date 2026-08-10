@@ -425,6 +425,9 @@ class Cortex:
             "quote raw JSON or tool output.\n"
             "- Never narrate your internal pipeline (pre-fire, searches, 404s). Just "
             "give the answer.\n"
+            "- NEVER claim an action happened (focus started, theme changed, task "
+            "created, key saved) unless the system confirmed it — deterministic "
+            "ingresses handle those; if you're not sure, say 'Say start when ready'.\n"
             "- The conversation history includes older replies in an old style — "
             "do NOT imitate them. Follow the current VOICE rules.\n"
             "## ANTI-FABRICATION (mandatory — fabricated answers are a BUG)\n"
@@ -717,28 +720,105 @@ class Cortex:
                 "message": f"Got it — {scope} API key updated to ••••{key[-4:]}."}
 
     def _focus_ingress(self, text: str) -> dict | None:
+        """Deterministic focus state machine — typo-tolerant and multi-turn:
+        'lets start a foscued mode?' → stage intent
+        '30 minutes'                → stage minutes
+        'ai agent build'            → stage task
+        'start the session now'     → START a REAL session
+
+        The old regex only matched 'start foc\\w* \\d+m', so follow-up messages
+        fell through to the LLM — which happily claimed 'Focus session started'
+        without a session existing. That must never happen again."""
         low = text.lower()
         from .focus import Focus
         f = Focus(self.db)
-        m = re.search(r"(?:start|begin)\s+foc\w*\s*(\d{1,3})\s*m", low)
-        if m:
-            minutes = min(180, max(1, int(m.group(1))))
-            allow = re.search(r"allow(?:ing)?\s+([a-z0-9.\-]+)", low)
-            allow_list = [allow.group(1)] if allow else []
-            r = f.start(minutes, allow_list, voice=True)
-            if r.get("ok"):
-                msg = (f"Focus started for {minutes} minutes" +
-                       (f", allowing {allow_list[0]}" if allow_list else "") +
-                       " — I'll nudge you if you drift.")
-                return {"message": msg, "session_id": r["session_id"],
-                        "minutes": minutes, "action": "start"}
-            return {"message": "A focus session is already active.", "action": "start_error"}
-        if re.search(r"(?:stop|end)\s+(?:the\s+)?foc\w*", low):
+        # typo-tolerant focus word: focus / focos / foscued / focs ...
+        has_focus = bool(re.search(r"\bf(?:oc|os|ocs)[a-z]*\b", low))
+        # staged config from earlier turns (expires after 30 min of silence)
+        pending: dict = {}
+        try:
+            raw = self.db.get_setting("focus.pending")
+            if raw:
+                p = raw if isinstance(raw, dict) else json.loads(raw)
+                if time.time() - float(p.get("ts", 0)) < 1800:
+                    pending = p
+        except Exception:
+            pending = {}
+
+        def _save_pending(**upd) -> dict:
+            np = dict(pending, ts=time.time(), **upd)
+            self.db.set_setting("focus.pending", np)
+            return np
+
+        def _clear_pending():
+            self.db.set_setting("focus.pending", None)
+
+        # ---- stop intent: 'stop focus', 'stop the session', 'end focus' ----
+        if re.search(r"(?:stop|end|quit|cancel)\s+(?:the\s+)?(?:f(?:oc|os|ocs)[a-z]*|session|timer)", low):
+            _clear_pending()
             r = f.stop()
             if r.get("ok"):
                 return {"message": f"Focus stopped after {r['elapsed_min']} min ({r['status']}).",
                         "action": "stop", "session_id": r["session_id"]}
-            return {"message": "No active focus session.", "action": "stop_error"}
+            return {"message": "No active focus session — say 'start focus 30m' anytime.",
+                    "action": "stop_error"}
+
+        minutes = 25
+        minutes_m = re.search(r"(\d{1,3})\s*(?:min(?:ute)?s?|m(?:in)?)\b", low)
+        if minutes_m:
+            minutes = min(180, max(1, int(minutes_m.group(1))))
+        allow = re.findall(r"allow(?:ing)?\s+([a-z0-9.\-]+)", low)
+        voice = not bool(re.search(r"no voice|silent|don'?t (voice|nudge|ping|alert)|quiet", low))
+        start_intent = bool(re.search(r"\b(start|begin|go(?: ahead)?|kick ?off|let'?s go|lets go|start it|start now|start the session)\b", low))
+
+        # ---- start intent (needs focus context: word, staged config, or active) ----
+        if start_intent and (has_focus or pending or f.active()):
+            if f.active():
+                return {"message": "A focus session is already running — I'll keep nudging you on drift.",
+                        "action": "start_error"}
+            if minutes_m or pending.get("minutes"):
+                mins = minutes if minutes_m else int(pending.get("minutes", 25))
+                task = str(pending.get("task") or "")
+                r = f.start(mins, allow or pending.get("allow", []), voice=voice, task=task)
+                if r.get("ok"):
+                    _clear_pending()
+                    msg = (f"Focus started — {mins} min" + (f" on '{task}'" if task else "")
+                           + ". I'll nudge you if you drift"
+                           + (" (voice on)" if voice else "") + ".")
+                    return {"message": msg, "session_id": r["session_id"], "minutes": mins,
+                            "action": "start", "task": task}
+                return {"message": "A focus session is already active.", "action": "start_error"}
+            _save_pending()
+            return {"message": "Almost there — how many minutes (e.g. 30m), and what are you working on?",
+                    "action": "start_config"}
+
+        # ---- configuration staging (focus word OR staged config in play) ----
+        if has_focus or pending:
+            if minutes_m:
+                _save_pending(minutes=minutes)
+                if not pending.get("task"):
+                    return {"message": f"{minutes} minutes it is — and what are you working on?",
+                            "action": "stage_minutes", "minutes": minutes}
+                return {"message": f"All set — {minutes} min on '{pending['task']}'. Say 'start' when ready.",
+                        "action": "stage_ready", "minutes": minutes}
+            # short non-question message = the task they're focusing on
+            if pending and not pending.get("task") and len(text) < 60 and not re.search(
+                    r"\?|remind|buy|purchase|order|track|monitor|dark|light|theme|research|"
+                    r"draft|email|book|search|weather|news|events|movies|call|setup|configure|"
+                    r"nudg|distract|voice|alert|notif", low):
+                _save_pending(task=text.strip())
+                return {"message": f"Got it — working on '{text.strip()}'. Say 'start' when ready.",
+                        "action": "stage_task", "task": text.strip()}
+            # focus-settings commands ("stop phone notificaton for focus",
+            # "fewer nudges", "no voice alerts") belong to the config ingress
+            # and must NOT be swallowed as a bare start intent
+            if re.search(r"phone|notificat|nudg|voice|allow|block|theme|dark|light|"
+                         r"sound|alert|chrome|toast|cooldown|limit|less|many|silent|quiet", low):
+                return None
+            if has_focus and not start_intent:
+                _save_pending()
+                return {"message": "Sure — focus mode! How long (e.g. 30m) and what are you working on?",
+                        "action": "stage_intent"}
         return None
 
     async def _buy_ingress(self, text: str) -> dict | None:

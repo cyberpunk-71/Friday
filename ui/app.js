@@ -139,7 +139,31 @@ function addMsg(role, html) {
   scrollChat();
   return wrap;
 }
-function scrollChat() { const el = $("#chat-scroll"); el.scrollTop = el.scrollHeight; }
+function scrollChat() { const el = $("#chat-scroll"); if (el) el.scrollTop = el.scrollHeight; }
+
+/* restore previous chats + panels after any refresh — hard refresh must feel
+   like nothing was lost */
+async function restoreChat() {
+  try {
+    const r = await api("/api/chat/history?limit=50");
+    const turns = (r.turns || []).filter(t => t.user_text && t.reply);
+    if (turns.length) {
+      for (const t of turns) {
+        addMsg("user", md(t.user_text));
+        addMsg("friday", md(t.reply));
+        state.chat.push(t);
+      }
+      scrollChat();
+    } else {
+      addWelcome();
+    }
+  } catch (e) {
+    addWelcome();
+  }
+}
+function addWelcome() {
+  addMsg("friday", md("**Friday–Δ is live.** One chat for everything — research, tasks, memory, focus, books, settings. Ask me anything, or try: *\"research phone undr 20k and draft mail to sarh\"*, *\"dark mode kar do\"*, *\"start focos 25m allow github\"*."));
+}
 
 function addCard(card) { renderCard(card); }
 
@@ -589,7 +613,7 @@ async function loadFocus() {
     state.focus.ends = s.start_ts + s.target_min * 60;
     $("#focus-start").classList.add("hidden");
     $("#focus-stop").classList.remove("hidden");
-    $("#focus-live").innerHTML = `<div class="dim">session #${s.session_id} · allow: ${esc(JSON.parse(s.allow_domains || "[]").join(", ") || "none")} · drifts: ${s.drift_count}</div>
+    $("#focus-live").innerHTML = `<div class="dim"><b>session #${s.session_id}</b>${s.task ? ` · 🎯 ${esc(s.task)}` : ""} · ${s.target_min} min · allow: ${esc(JSON.parse(s.allow_domains || "[]").join(", ") || "none")} · drifts: ${s.drift_count}</div>
       <div class="dim" style="margin-top:6px">📡 Drift sensor: this tab is tracked (tab-switch = drift). For full browser tracking install the extension: <a href="/api/extension/zip" download style="color:var(--accent)">friday-sensor.zip</a> → chrome://extensions → Load unpacked.</div>`;
   } else {
     state.focus.active = null;
@@ -952,7 +976,7 @@ function pollFocus() {
     $("#focus-ring-fg").style.strokeDashoffset = (163.4 * (1 - pct)).toFixed(1);
     const m = Math.floor(left / 60), sec = Math.floor(left % 60);
     $("#focus-time").textContent = `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
-    $("#focus-drifts").textContent = `drifts: ${s.drift_count}`;
+    $("#focus-drifts").textContent = `drifts: ${s.drift_count}${s.task ? ` · ${s.task}` : ""}`;
   } else {
     w.classList.add("hidden");
   }
@@ -994,11 +1018,16 @@ function applyTheme(t) { document.documentElement.dataset.theme = t; }
     if (ov.llm_provider && String(ov.llm_provider).includes("sim")) {
       const b = $("#offline-banner");
       b.classList.remove("hidden");
-      $("#offline-banner-link").textContent = "https://copyrighted-recognition-plane-undertake.trycloudflare.com";
+      // this page IS served through the tunnel — point at the current origin
+      $("#offline-banner-link").textContent = location.origin;
       $("#offline-banner-link").style.cursor = "pointer";
-      $("#offline-banner-link").onclick = () => location.href = "https://copyrighted-recognition-plane-undertake.trycloudflare.com";
+      $("#offline-banner-link").onclick = () => location.href = location.origin;
     }
   } catch (e) {}
+  // restore previous chats and preload every panel — a hard refresh must show
+  // everything immediately, no empty panels until you click them
+  restoreChat();
+  Promise.all([loadTasks(), loadMemory(), loadFocus(), loadBooks(), loadAdmin()]).catch(() => {});
   setInterval(async () => {           // keep focus state fresh for the sensor
     try {
       const a = await api("/api/focus/active");
@@ -1017,5 +1046,4 @@ function applyTheme(t) { document.documentElement.dataset.theme = t; }
     const r = await api("/api/admin/settings");
     if (r && r["ui.theme"]) applyTheme(r["ui.theme"]);
   } catch (e) {}
-  addMsg("friday", md("**Friday–Δ is live.** One chat for everything — research, tasks, memory, focus, books, settings. Ask me anything, or try: *\"research phone undr 20k and draft mail to sarh\"*, *\"dark mode kar do\"*, *\"start focos 25m allow github\"*."));
 })();

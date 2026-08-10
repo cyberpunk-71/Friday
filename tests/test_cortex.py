@@ -331,3 +331,47 @@ def test_self_ref_queries_skip_web_search(db):
     for q in ("who is the mayor of ahmedabad", "what is the weather today",
               "movies showing today"):
         assert not SELF_REF.search(q), q
+
+
+def test_focus_flow_typo_and_staged_start(cortex, db):
+    """The exact flow the user hit: 'lets start a foscued mode?' → '30 minutes'
+    → 'ai agent build' → 'start the session now'. The old ingress only matched
+    'start foc\\w* Nm', so these fell to the LLM which CLAIMED the session
+    started without one existing. Now it must produce a REAL session."""
+    from core.focus import Focus
+    f = Focus(db)
+    e1 = collect(cortex.turn("lets start a foscued mode?"))
+    d1 = next(e for e in e1 if e["type"] == "done")
+    assert "minutes" in d1["reply"].lower()
+    assert f.active() is None
+    e2 = collect(cortex.turn("30 minutes"))
+    d2 = next(e for e in e2 if e["type"] == "done")
+    assert "working on" in d2["reply"]
+    assert f.active() is None
+    e3 = collect(cortex.turn("ai agent build"))
+    d3 = next(e for e in e3 if e["type"] == "done")
+    assert "ai agent build" in d3["reply"]
+    assert f.active() is None
+    e4 = collect(cortex.turn("yes nudge me if i get distracted, start the session now"))
+    d4 = next(e for e in e4 if e["type"] == "done")
+    assert "started" in d4["reply"].lower()
+    s = f.active()
+    assert s is not None, "focus session must actually exist (was hallucinated before)"
+    assert s["target_min"] == 30
+    assert s["task"] == "ai agent build"
+    # stop works too
+    e5 = collect(cortex.turn("stop the session"))
+    next(e for e in e5 if e["type"] == "done")
+    assert f.active() is None
+
+
+def test_focus_one_shot_typo(cortex, db):
+    """'start focos 25m allow github' (typo + one-shot) still starts for real."""
+    from core.focus import Focus
+    f = Focus(db)
+    e = collect(cortex.turn("start focos 25m allow github"))
+    d = next(e for e in e if e["type"] == "done")
+    assert "started" in d["reply"].lower()
+    s = f.active()
+    assert s and s["target_min"] == 25
+    assert "github" in (s["allow_domains"] or "")
