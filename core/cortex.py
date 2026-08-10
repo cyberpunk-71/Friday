@@ -940,6 +940,33 @@ class Cortex:
                     return c.lower()
         return "ahmedabad"
 
+    def _identity_ingress(self, text: str) -> dict | None:
+        """'which model are you' → DETERMINISTIC truthful answer. The model
+        kept hedging ('frontier-class') and echoing that from history — the
+        user asked for the real model twice. Read the live provider instead."""
+        low = text.lower().strip()
+        if not re.search(
+                r"(which|what)\s+(model|llm|ai( |-)?model)[\s?]*(are|is|do|does)?"
+                r"[^?]{0,25}(you|it|this|friday)\b|"
+                r"what (are you|is it|is this) running on|"
+                r"which provider (are you|do you use|you (are )?using)|"
+                r"which llm", low):
+            return None
+        if len(low) > 80:
+            return None
+        try:
+            from .providers import make_llm
+            p = make_llm("chat")
+            name = p.name
+            model = getattr(p, "model", "") or ""
+            label = f"{name} · {model}" if model else name
+            msg = (f"I'm running on **{label}** — that's what's wired in "
+                   "Admin → Models & Keys (Model routing)."
+                   + ("" if name != "sim" else " No API key is configured, so I'm in offline mode."))
+            return {"message": msg}
+        except Exception:
+            return None
+
     @staticmethod
     def _provider_key(text: str) -> dict | None:
         """'this is my new deep seek api kes sk-9f3c... for research use case'
@@ -1275,6 +1302,20 @@ class Cortex:
                                             "scope": key_event["scope"],
                                             "masked": key_event["masked"]}}
             yield {"type": "done", "reply": key_event["message"], "latency_ms": 1,
+                   "cost_usd": 0.0, "corr_id": corr_id, "model": "deterministic",
+                   "slots_used": 0}
+            return
+        # 'which model are you' — deterministic truthful identity (the LLM
+        # kept hedging with 'frontier-class' and echoing it from history)
+        identity_event = self._identity_ingress(text)
+        if identity_event:
+            yield {"type": "ctrl", "ctrl": {"depth": 0.1, "tooliness": 0.0,
+                                            "emotionality": 0.0, "novelty": 0.2,
+                                            "stakes": 0.0, "config_deltas": {},
+                                            "memory_writes": [], "code_intent": False,
+                                            "ask": []}}
+            yield {"type": "delta", "text": identity_event["message"]}
+            yield {"type": "done", "reply": identity_event["message"], "latency_ms": 1,
                    "cost_usd": 0.0, "corr_id": corr_id, "model": "deterministic",
                    "slots_used": 0}
             return

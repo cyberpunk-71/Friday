@@ -633,3 +633,22 @@ def test_strip_leading_key_remnant():
     assert strip_leading_key_remnant('Hey normal reply') == 'Hey normal reply'
     out = polish_reply('config_deltHey! Still here, still in focus mode with you.')
     assert 'config_delt' not in out and out.startswith('Hey! Still here')
+
+
+def test_identity_ingress_answers_real_model(cortex, db):
+    """'which model are you' must deterministically answer with the ACTUAL
+    provider+model — never the LLM's 'frontier-class' hedge."""
+    db.exec("INSERT INTO provider_keys(provider,scope,api_key,active,source,created_ts,updated_ts)"
+            " VALUES('deepseek','default','sk-abc1234567890',1,'admin',?,?)", (1, 1))
+    db.set_setting("llm.provider", "deepseek")
+    for q in ("which model are you", "what model are you using", "what are you running on",
+              "which provider are you using", "which llm is this"):
+        events = collect(cortex.turn(q))
+        done = next(e for e in events if e["type"] == "done")
+        assert done["model"] == "deterministic", q
+        assert "deepseek" in done["reply"].lower(), (q, done["reply"])
+        assert "frontier" not in done["reply"].lower(), q
+    # a phone-shopping question must NOT be intercepted
+    events = collect(cortex.turn("which model of phone should I buy under 20k"))
+    done = next(e for e in events if e["type"] == "done")
+    assert done["model"] != "deterministic"
