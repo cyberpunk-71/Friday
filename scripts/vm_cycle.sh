@@ -650,6 +650,26 @@ if [ -d "$WS/.git" ] && command -v git >/dev/null 2>&1; then
   fi
 fi
 
+
+op_friday_gemon() {
+  log friday_gemon
+  OUT="${OUT}$( cd "$RUNTIME" && .venv/bin/python -u - <<'PY'
+import os, sys, json
+sys.path.insert(0, os.getcwd())
+from core.db import get_db
+from core.providers import GeminiProvider
+db = get_db()
+db.set_setting("llm.provider", "gemini")
+db.set_setting("llm.model", "gemini-3.6-flash")
+db.set_setting("llm.auto_heal_ts.gemini", None)
+db.set_setting("llm.auto_heal_ts.deepseek", None)
+db.set_setting("llm.auto_heal", None)
+print("routing -> gemini, model gemini-3.6-flash, heal timers reset")
+PY
+)\n"
+  ok friday_gemon
+}
+
 case "$CMD" in
   friday_setup)       run_ops friday_setkey friday_netcheck friday_deploy friday_test friday_nginx ;;
   friday_setkey)      run_ops friday_setkey ;;
@@ -675,22 +695,3 @@ esac
 
 write_result
 exit $exit_code
-
-op_friday_gemon() {
-  log friday_gemon
-  OUT="${OUT}$( cd "$RUNTIME" && .venv/bin/python -u - <<'PY'
-import os, sys, json
-sys.path.insert(0, os.getcwd())
-from core.db import get_db
-from core.providers import GeminiProvider
-db = get_db()
-db.set_setting("llm.provider", "gemini")
-db.set_setting("llm.model", "gemini-3.6-flash")
-db.set_setting("llm.auto_heal_ts.gemini", None)
-db.set_setting("llm.auto_heal_ts.deepseek", None)
-db.set_setting("llm.auto_heal", None)
-print("routing -> gemini, model gemini-3.6-flash, heal timers reset")
-PY
-)\n"
-  ok friday_gemon
-}
