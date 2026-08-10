@@ -247,11 +247,11 @@ op_friday_gemtest() {
   log friday_gemtest
   # real Gemini round-trip from the VM using the DB-saved key — the ONLY way
   # to see whether the key actually works (sandbox has no egress to Google)
-  OUT="${OUT}$( cd "$RUNTIME" && .venv/bin/python - <<'PY'
+  OUT="${OUT}$( cd "$RUNTIME" && .venv/bin/python -u - <<'PY'
 import asyncio, os, sys, json
 sys.path.insert(0, os.getcwd())
 from core.db import get_db
-from core.providers import GeminiProvider
+from core.providers import GeminiProvider, GEMINI_MODELS
 db = get_db()
 row = db.q1("SELECT api_key FROM provider_keys WHERE provider='gemini' AND scope='default' AND active=1 ORDER BY updated_ts DESC LIMIT 1")
 if not row or not row["api_key"]:
