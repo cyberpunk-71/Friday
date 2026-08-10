@@ -1,0 +1,15 @@
+[Unit]
+Description=Friday worker (SETTLE: reminders, trackers, nightly, dreamstate)
+After=network.target friday-core.service
+
+[Service]
+Type=simple
+User=friday
+WorkingDirectory=/opt/friday
+EnvironmentFile=/opt/friday/.env
+ExecStart=/opt/friday/.venv/bin/python -m core.worker
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

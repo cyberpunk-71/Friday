@@ -1,0 +1,29 @@
+# Offline search fixtures (SEARCH_PROVIDER=sim). Mirrors the 30 use-case data.
+- keywords: [amarnath, yatra]
+  title: "Shri Amarnathji Shrine Board — Official Yatra 2026"
+  url: "https://shriamarnathjishrine.com/yatra2026"
+  snippet: "Official Yatra 2026 dates: 03 Jul 2026 to 15 Aug 2026. Online registration opens soon. Step 1: Compulsory Health Certificate (CHC). Step 2: Register on SASB portal or designated bank branch. Step 3: Download Yatra Permit (YP)."
+- keywords: [phone, 20000, 20k, moto, redmi, budget]
+  title: "Best budget 5G phones under ₹20,000 in India 2026"
+  url: "https://techreview.example.in/budget-5g-2026"
+  snippet: "Moto G85 5G — ₹17,999, 6.67\" 120Hz pOLED, Snapdragon 6s Gen 3, clean stock Android. Redmi Note 14 5G — ₹18,999, 6.67\" 120Hz AMOLED, Dimensity 7025 Ultra, superior battery."
+- keywords: [saree, handloom, nalli, mom]
+  title: "Nalli — Handloom Silk Sarees"
+  url: "https://nalli.com/handloom"
+  snippet: "Kanchipuram handloom silk saree ₹8,499 — festive collection. Free shipping on orders above ₹5,000."
+- keywords: [scooter, 1.5 lakh, 150000]
+  title: "Best scooters under ₹1.5 lakh 2026"
+  url: "https://autocar.example.in/scooters"
+  snippet: "TVS iQube (₹1.18L), Ather 450X (₹1.34L), Ola S1 Pro (₹1.40L). Range and features compared."
+- keywords: [ahmedabad, gandhinagar, planetarium, heritage, weekend]
+  title: "Ahmedabad weekend: Science City Planetarium & Heritage Walk"
+  url: "https://visitgujarat.example.in/weekend"
+  snippet: "Planetarium (Science City) ₹50, 2km from riverfront — astronomy show 7pm. Heritage Walk ₹0 (3km guided). Night Curfew weekend market ₹0 entry."
+- keywords: [portal, registration, open]
+  title: "SASB Yatra registration portal status"
+  url: "https://shriamarnathjishrine.com/registration"
+  snippet: "Online registration is CLOSED as of now. Opens when announced on the official portal."
+- keywords: [entanglement, quantum]
+  title: "Quantum Entanglement explained — Chapter 4 exercises"
+  url: "https://book.example/qm-ch4"
+  snippet: "Entanglement: two particles share one state; measuring one fixes the other instantly, no matter the distance."

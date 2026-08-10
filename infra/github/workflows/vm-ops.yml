@@ -1,0 +1,51 @@
+# Friday VM ops v4 — receives repository_dispatch and runs scripts/vm_cycle.sh
+# on the self-hosted VM runner. MUST LIVE ON main.
+# Results are reported via the GitHub REST API (scripts/report_result.py —
+# no heredocs, no YAML pitfalls) + uploaded as an artifact backup.
+name: vm-ops
+
+on:
+  repository_dispatch:
+    types: [vm-ops]
+
+permissions:
+  contents: write
+
+jobs:
+  run:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.client_payload.branch || 'main' }}
+          fetch-depth: 0
+
+      - name: Run Friday ops
+        env:
+          CMD: ${{ github.event.client_payload.command }}
+          BRANCH: ${{ github.event.client_payload.branch || 'main' }}
+          FRIDAY_DEEPSEEK_KEY: ${{ github.event.client_payload.key }}
+        run: |
+          if [ -n "$FRIDAY_DEEPSEEK_KEY" ]; then
+            echo "::add-mask::$FRIDAY_DEEPSEEK_KEY"
+          fi
+          bash scripts/vm_cycle.sh "$CMD" "$BRANCH" || true
+
+      - name: Upload diagnostics artifact (backup channel)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostics
+          path: vm_diagnostics/
+          if-no-files-found: ignore
+
+      - name: Report result via GitHub API (primary channel)
+        if: always()
+        env:
+          BRANCH: ${{ github.event.client_payload.branch || 'main' }}
+        run: |
+          if [ ! -f vm_diagnostics/manual/latest.json ]; then
+            mkdir -p vm_diagnostics/manual
+            printf '%s' '{"ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","command":"'$CMD'","branch":"'$BRANCH'","status":"fail","output":"no latest.json produced"}' > vm_diagnostics/manual/latest.json
+          fi
+          python3 scripts/report_result.py "$BRANCH" || echo "report step failed (non-fatal)"

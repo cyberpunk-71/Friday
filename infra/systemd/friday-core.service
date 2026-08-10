@@ -1,0 +1,15 @@
+[Unit]
+Description=Friday core (uvicorn — chat, panels, API)
+After=network.target
+
+[Service]
+Type=simple
+User=friday
+WorkingDirectory=/opt/friday
+EnvironmentFile=/opt/friday/.env
+ExecStart=/opt/friday/.venv/bin/python run.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Friday–Δ</title>
+<link rel="stylesheet" href="/static/style.css?v=3.6.1"/>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%23ff7849'/><stop offset='1' stop-color='%23ff5e3a'/></linearGradient></defs><rect x='8' y='8' width='84' height='84' rx='22' fill='url(%23g)'/><text x='50' y='68' font-size='52' text-anchor='middle' fill='white' font-family='Georgia,serif'>Δ</text></svg>"/>
+</head>
+<body>
+<div id="offline-banner" class="hidden">
+  <span class="dot"></span> ⚠ <b>This is the OFFLINE SANDBOX PREVIEW</b> — no internet, answers are stubs.
+  Use the real Friday (DeepSeek + live web search) at:
+  <b id="offline-banner-link"></b>
+</div>
+<div id="app">
+  <aside id="sidebar">
+    <div class="brand">
+      <div class="logo">Friday<span class="delta">Δ</span></div>
+      <div class="tagline">your cognitive companion — one chat, everything inline</div>
+    </div>
+
+    <nav id="nav">
+      <button class="nav-item active" data-view="today"><span class="n-ico">🏠</span><span class="n-label">Today</span></button>
+      <button class="nav-item" data-view="chat"><span class="n-ico">✦</span><span class="n-label">Chat</span></button>
+      <button class="nav-item hero-nav" data-view="focus"><span class="n-ico">◎</span><span class="n-label">Focus Studio</span></button>
+      <button class="nav-item" data-view="garden"><span class="n-ico">🌱</span><span class="n-label">Garden & Insights</span></button>
+      <button class="nav-item" data-view="tasks"><span class="n-ico">◫</span><span class="n-label">Tasks</span></button>
+      <button class="nav-item" data-view="memory"><span class="n-ico">◍</span><span class="n-label">Memory</span></button>
+      <button class="nav-item" data-view="books"><span class="n-ico">▤</span><span class="n-label">Books</span></button>
+      <button class="nav-item" data-view="admin"><span class="n-ico">⚙</span><span class="n-label">Admin</span></button>
+    </nav>
+
+    <div class="side-widgets">
+      <div id="focus-widget" class="widget">
+        <div class="widget-title">FOCUS · BODY DOUBLE</div>
+        <div id="focus-widget-idle">
+          <div class="bd-mini-row">
+            <img src="/static/companion.png" class="bd-mini-avatar" alt="Friday"/>
+            <div class="bd-mini-text">
+              <div class="bd-mini-line">I'll work alongside you.</div>
+              <button id="side-focus-quick" class="mini-btn primary">▶ Start focus</button>
+            </div>
+          </div>
+        </div>
+        <div id="focus-widget-active" class="hidden">
+          <div class="bd-mini-row">
+            <img src="/static/companion.png" class="bd-mini-avatar pulse" alt="Friday"/>
+            <div class="bd-mini-text">
+              <div class="bd-mini-line" id="bd-mini-time">25:00</div>
+              <div class="bd-mini-task" id="bd-mini-task">on task…</div>
+            </div>
+          </div>
+          <div id="focus-ring" class="hidden"><svg viewBox="0 0 60 60">
+            <defs><linearGradient id="gradRing" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#0ea5a4"/><stop offset="100%" stop-color="#34d399"/>
+            </linearGradient></defs>
+            <circle class="ring-bg" cx="30" cy="30" r="26"/><circle class="ring-fg" id="focus-ring-fg" cx="30" cy="30" r="26"/></svg><span id="focus-time">25:00</span></div>
+          <div id="focus-drifts">drifts: 0</div>
+        </div>
+      </div>
+
+      <div class="widget">
+        <div class="widget-title">DAILY BUDGET</div>
+        <div class="budget-row"><span id="spend-today">$0.0000</span><span id="budget-total" class="dim">/ $6.00</span></div>
+        <div class="bar"><div id="budget-bar" class="bar-fill"></div></div>
+        <div id="ask-budget" class="dim">ask budget: 2 left</div>
+      </div>
+
+      <div class="widget">
+        <div class="widget-title">SYSTEM</div>
+        <div id="sys-status" class="dim">loading…</div>
+        <div class="sys-row">
+          <button id="theme-toggle" class="mini-btn" title="Toggle light/dark">◐ Theme</button>
+          <div id="ui-version" class="dim">UI v3.6.1 · core 0.1.0</div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <main id="main">
+    <!-- ============ TODAY — the sanctuary landing ============ -->
+    <section id="view-today" class="view active">
+      <div id="today-host" class="today-scroll"></div>
+    </section>
+
+    <!-- ============ CHAT ============ -->
+    <section id="view-chat" class="view">
+      <div id="chat-header">
+        <div id="chat-title">Friday<small>Δ</small></div>
+        <div id="status-pill"><span class="live-dot"></span><span id="status-text">live</span></div>
+        <button id="header-focus-btn" class="header-focus" title="Start a body-double focus session">🎯<span id="header-focus-mini" class="hidden"></span></button>
+        <div id="chat-meta" class="dim"></div>
+      </div>
+      <div id="chat-scroll">
+        <div id="chat-stream"></div>
+      </div>
+      <div id="composer">
+        <div id="composer-voice" class="hidden">
+          <div id="voice-wave"><span></span><span></span><span></span><span></span><span></span></div>
+          <div id="voice-hint">listening… (speak now, tap ⏹ to send)</div>
+        </div>
+        <div class="composer-row">
+          <button id="btn-voice" class="icon-btn" title="Voice (hold or tap)">🎙</button>
+          <textarea id="composer-input" rows="1" placeholder="Talk to Friday…"></textarea>
+          <button id="btn-send" class="send-btn">↑</button>
+        </div>
+        <div id="composer-hints" class="dim">try: “dark mode kar do” · “start focos 25m allow github” · “research phone undr 20k” · “my new deepseek api kes sk-xxx for research”</div>
+      </div>
+    </section>
+
+    <!-- ============ TASKS ============ -->
+    <section id="view-tasks" class="view">
+      <div class="panel-head">
+        <h2>Tasks</h2>
+        <div class="panel-actions">
+          <button id="tasks-refresh" class="btn ghost">⟳ refresh</button>
+        </div>
+      </div>
+      <div class="panel-head sub"><h4 class="sub-head">📡 TRACKERS</h4></div>
+      <div id="tracker-list" class="cards" style="padding:0 22px 8px"></div>
+      <div id="task-kanban" class="kanban"></div>
+      <div id="task-detail" class="drawer hidden"></div>
+    </section>
+
+    <!-- ============ MEMORY ============ -->
+    <section id="view-memory" class="view">
+      <div class="panel-head"><h2>Memory</h2>
+        <div class="tabs">
+          <button class="tab active" data-mtab="atoms">Atoms</button>
+          <button class="tab" data-mtab="beliefs">Beliefs α/β</button>
+          <button class="tab" data-mtab="tensions">Tensions</button>
+          <button class="tab" data-mtab="loops">Open Loops</button>
+          <button class="tab" data-mtab="constraints">Constraints</button>
+          <button class="tab" data-mtab="graph">Graph</button>
+          <button class="tab" data-mtab="explain">Explain</button>
+          <button class="tab" data-mtab="sql">Agent-SQL</button>
+        </div>
+      </div>
+      <div id="memory-body">
+        <div id="mtab-atoms" class="mtab active">
+          <div class="toolbar">
+            <input id="atom-search" placeholder="search atoms…"/><select id="atom-kind"></select>
+          </div>
+          <div id="atom-list" class="cards"></div>
+        </div>
+        <div id="mtab-beliefs" class="mtab"><div id="belief-list" class="cards"></div></div>
+        <div id="mtab-tensions" class="mtab"><div id="tension-list" class="cards"></div></div>
+        <div id="mtab-loops" class="mtab"><div id="loop-list" class="cards"></div></div>
+        <div id="mtab-constraints" class="mtab"><div id="constraint-list" class="cards"></div></div>
+        <div id="mtab-graph" class="mtab"><div id="graph-box"></div><div id="graph-list"></div></div>
+        <div id="mtab-explain" class="mtab">
+          <div class="toolbar"><input id="explain-q" placeholder="why did you remember X?"/><button id="explain-go" class="btn ghost">explain</button></div>
+          <div id="explain-out"></div>
+        </div>
+        <div id="mtab-sql" class="mtab">
+          <div class="toolbar"><input id="sql-q" placeholder="SELECT … (read-only over DELTA views)"/><button id="sql-go" class="btn ghost">run</button></div>
+          <div id="sql-out"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ FOCUS ============ -->
+    <section id="view-focus" class="view">
+      <div class="panel-head"><h2>Focus Studio</h2>
+        <div class="panel-actions">
+          <button id="focus-refresh" class="btn ghost">⟳ refresh</button>
+        </div>
+      </div>
+      <div id="bd-host" class="bd-scroll"></div>
+    </section>
+
+    <!-- ============ GARDEN & INSIGHTS ============ -->
+    <section id="view-garden" class="view">
+      <div class="panel-head"><h2>Garden & Insights</h2>
+        <div class="panel-actions"><button id="garden-refresh" class="btn ghost">⟳ refresh</button></div>
+      </div>
+      <div id="garden-host" class="garden-scroll"></div>
+    </section>
+
+    <!-- ============ BOOKS ============ -->
+    <section id="view-books" class="view">
+      <div class="panel-head"><h2>Books</h2>
+        <div class="panel-actions">
+          <label class="btn ghost file-btn">⬆ Upload (no size limit)
+            <input id="book-file" type="file" accept=".pdf,.txt,.epub" hidden/>
+          </label>
+        </div>
+      </div>
+      <div id="book-list" class="cards"></div>
+      <div id="book-reader" class="drawer hidden"></div>
+    </section>
+
+    <!-- ============ ADMIN ============ -->
+    <section id="view-admin" class="view">
+      <div class="panel-head"><h2>Admin</h2>
+        <div class="tabs">
+          <button class="tab active" data-atab="overview">Overview</button>
+          <button class="tab" data-atab="params">Parameters</button>
+          <button class="tab" data-atab="models">Models & Keys</button>
+          <button class="tab" data-atab="integrations">One-Click</button>
+          <button class="tab" data-atab="spend">Expenses</button>
+          <button class="tab" data-atab="turns">Turns</button>
+          <button class="tab" data-atab="genome">Genome</button>
+          <button class="tab" data-atab="eval">Eval 50</button>
+        </div>
+      </div>
+      <div id="admin-body">
+        <div id="atab-overview" class="atab active"><div id="admin-overview"></div></div>
+        <div id="atab-params" class="atab">
+          <div class="toolbar"><input id="param-search" placeholder="search parameter…"/><button id="param-save" class="btn primary">Save changes</button></div>
+          <div id="param-tree"></div>
+        </div>
+        <div id="atab-models" class="atab">
+          <div class="card">
+            <h3>Provider keys — one click, live</h3>
+            <div class="form-row">
+              <select id="mc-provider">
+                <option value="deepseek">DeepSeek (chat/LLM)</option>
+                <option value="gemini">Gemini (chat/LLM)</option>
+                <option value="tavily">Tavily (web search)</option>
+                <option value="brave">Brave (web search)</option>
+                <option value="exa">Exa (web search)</option>
+                <option value="groq">Groq (voice/STT)</option>
+                <option value="openrouter">OpenRouter (alt LLM)</option>
+              </select>
+              <input id="mc-key" type="password" placeholder="api key…"/>
+              <button id="mc-save" class="btn primary">Save key</button>
+              <button id="mc-test" class="btn ghost">Test</button>
+            </div>
+            <div class="dim" style="margin-top:6px">Keys go live instantly — saving a DeepSeek or Gemini key switches chat to it; Tavily/Brave/Exa power real web search, Groq powers voice.</div>
+            <div class="dim" style="margin-top:6px">🔑 Gemini: create a key at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener" style="color:var(--accent)">aistudio.google.com/apikey</a> — avoid "ephemeral" tokens (they expire fast). If chat falls back automatically, your key was rejected (401).</div>
+            <div id="mc-result"></div>
+          </div>
+          <div class="card">
+            <h3>Model routing — per task</h3>
+            <p class="dim" style="margin-bottom:8px">Pick a provider + model for each task type. Uses the keys saved above — no re-entry. Gemini auto-falls-forward if a model gets retired.</p>
+            <div class="routing-table">
+              <div class="route-row" data-scope="chat">
+                <div class="route-label"><b>Chat</b><span class="dim">main replies + eval</span></div>
+                <select class="route-provider">
+                  <option value="deepseek">DeepSeek</option>
+                  <option value="gemini">Gemini</option>
+                </select>
+                <input class="route-model" type="text" placeholder="model (e.g. gemini-3.6-flash)" list="gemini-models"/>
+                <button class="btn ghost route-apply">Apply</button>
+                <span class="route-status dim"></span>
+              </div>
+              <div class="route-row" data-scope="research">
+                <div class="route-label"><b>Deep research</b><span class="dim">multi-round web research</span></div>
+                <select class="route-provider">
+                  <option value="deepseek">DeepSeek</option>
+                  <option value="gemini">Gemini</option>
+                </select>
+                <input class="route-model" type="text" placeholder="inherit chat model" list="gemini-models"/>
+                <button class="btn ghost route-apply">Apply</button>
+                <span class="route-status dim"></span>
+              </div>
+              <div class="route-row" data-scope="books">
+                <div class="route-label"><b>Books</b><span class="dim">book Q&amp;A / summaries</span></div>
+                <select class="route-provider">
+                  <option value="deepseek">DeepSeek</option>
+                  <option value="gemini">Gemini</option>
+                </select>
+                <input class="route-model" type="text" placeholder="inherit chat model" list="gemini-models"/>
+                <button class="btn ghost route-apply">Apply</button>
+                <span class="route-status dim"></span>
+              </div>
+              <div class="route-row" data-scope="eval">
+                <div class="route-label"><b>Eval 50</b><span class="dim">test suite runs</span></div>
+                <select class="route-provider">
+                  <option value="deepseek">DeepSeek</option>
+                  <option value="gemini">Gemini</option>
+                </select>
+                <input class="route-model" type="text" placeholder="inherit chat model" list="gemini-models"/>
+                <button class="btn ghost route-apply">Apply</button>
+                <span class="route-status dim"></span>
+              </div>
+            </div>
+            <datalist id="gemini-models">
+              <option value="gemini-3.5-flash">Gemini 3.5 Flash — FREE tier (tight limits: ~5 req/min, ~20/day)</option>
+              <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash-Lite — FREE tier (best free option: ~500/day)</option>
+              <option value="gemini-3-flash-preview">Gemini 3 Flash (preview) — FREE tier</option>
+              <option value="gemini-3.6-flash">Gemini 3.6 Flash — paid, current best</option>
+              <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash-Lite — paid, cheapest 3.5</option>
+              <option value="deepseek-chat">DeepSeek chat</option>
+              <option value="deepseek-reasoner">DeepSeek reasoner</option>
+            </datalist>
+            <div class="dim" style="margin-top:8px">🆓 Free-tier Gemini: <b>gemini-3.1-flash-lite</b> (~500 req/day), <b>gemini-3.5-flash</b> (~20/day), <b>gemini-3-flash-preview</b>. Free-tier prompts may be used by Google to improve models — don't send anything private on those.</div>
+            <div id="llm-heal-note"></div>
+          </div>
+          <div id="provider-keys" class="cards"></div>
+        </div>
+        <div id="atab-integrations" class="atab">
+          <div class="card"><h3>One-click integrations</h3>
+            <div class="form-row">
+              <select id="oc-kind"><option value="extension">MV3 extension (page logger + focus nudge)</option><option value="mobile">Mobile monitoring</option><option value="search">Search provider (Tavily)</option><option value="voice">Voice provider (Groq)</option></select>
+              <input id="oc-value" placeholder="value (e.g. tavily key / URL)"/>
+              <button id="oc-go" class="btn primary">Enable</button>
+            </div>
+            <div id="oc-result"></div>
+          </div>
+          <div class="card"><h3>📡 Friday Sensor extension (MV3)</h3>
+            <p class="dim" style="margin:6px 0">Tracks every page you visit (working-set learning), detects focus drifts, and nudges you with toasts / Chrome notifications / voice. Load it once — it updates itself from this server.</p>
+            <div class="form-row">
+              <a class="btn primary" href="/api/extension/zip" download="friday-sensor.zip">⬇ Download friday-sensor.zip</a>
+              <button class="btn ghost" onclick="copyServerUrl()">📋 Copy server URL</button>
+            </div>
+            <div class="dim" style="margin-top:8px">Install: unzip → chrome://extensions → Developer mode → <b>Load unpacked</b> → pick the folder → set Server URL (paste the copied link) in the extension popup.</div>
+            <div id="oc-ext-status"></div>
+          </div>
+        </div>
+        <div id="atab-spend" class="atab"><div id="spend-chart"></div><div id="spend-table"></div></div>
+        <div id="atab-turns" class="atab"><div id="turns-table"></div></div>
+        <div id="atab-genome" class="atab">
+          <div class="card"><h3>Genome git log — the SELF</h3><div id="genome-log"></div></div>
+          <div class="card"><h3>Skills (73 Donna procedures → genome)</h3><div id="genome-skills"></div></div>
+        </div>
+        <div id="atab-eval" class="atab">
+          <div class="card"><h3>📊 Eval — 50 complex scenarios (proof of intelligence)</h3>
+            <div id="eval-summary"></div>
+            <div class="form-row" style="margin-top:12px">
+              <a class="btn primary" href="/api/eval/file/eval_report.html" download>⬇ Download HTML report</a>
+              <a class="btn ghost" href="/api/eval/file/eval_report.json" download>⬇ JSON</a>
+              <a class="btn ghost" href="/api/eval/file/eval_chat_log.md" download>⬇ Full chat log</a>
+            </div>
+            <div id="eval-details"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="toast-stack"></div>
+<div id="chrome-modal" class="hidden"><div id="chrome-modal-box"></div></div>
+
+<script src="/static/app.js?v=3.6.1"></script>
+</body>
+</html>

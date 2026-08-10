@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Friday Focus</title>
+<link rel="stylesheet" href="/static/style.css?v=1.0.0"/>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%23ff7849'/><stop offset='1' stop-color='%23ff5e3a'/></linearGradient></defs><circle cx='50' cy='50' r='42' fill='url(%23g)'/><text x='50' y='64' font-size='40' text-anchor='middle' fill='white' font-family='Georgia,serif'>Δ</text></svg>"/>
+</head>
+<body>
+<div id="app">
+  <header id="topbar">
+    <div class="brand">Friday<span class="delta">Δ</span><span class="focus-tag">focus</span></div>
+    <nav id="nav">
+      <button class="nav-item active" data-view="focus">Focus</button>
+      <button class="nav-item" data-view="history">History</button>
+      <button class="nav-item" data-view="settings">Settings</button>
+    </nav>
+    <button id="theme-toggle" class="ghost-btn" title="theme">◐</button>
+  </header>
+
+  <main id="main">
+    <!-- ============ FOCUS ============ -->
+    <section id="view-focus" class="view active">
+      <div id="focus-host"></div>
+    </section>
+
+    <!-- ============ HISTORY ============ -->
+    <section id="view-history" class="view">
+      <div id="history-host"></div>
+    </section>
+
+    <!-- ============ SETTINGS ============ -->
+    <section id="view-settings" class="view">
+      <div id="settings-host"></div>
+    </section>
+  </main>
+</div>
+
+<div id="toast-stack"></div>
+<script src="/static/app.js?v=1.0.0"></script>
+</body>
+</html>
