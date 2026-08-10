@@ -36,8 +36,12 @@ CTRL_RE = re.compile(r"^\s*\{.*?\}\s*", re.S)
 
 def parse_ctrl(accumulated: str) -> tuple[dict | None, str]:
     """Try to parse the leading JSON object (the ⟨CTRL⟩ block).
-    Returns (ctrl_dict_or_None, remaining_text). Greedy-balanced scan."""
-    if not accumulated.lstrip().startswith("{"):
+    Returns (ctrl_dict_or_None, remaining_text). Greedy-balanced scan.
+    Tolerates a literal '⟨CTRL⟩' marker the model sometimes echoes first."""
+    accumulated = accumulated.lstrip()
+    if accumulated.startswith("⟨CTRL⟩"):
+        accumulated = accumulated[len("⟨CTRL⟩"):].lstrip()
+    if not accumulated.startswith("{"):
         return None, accumulated
     depth = 0
     in_str = False
@@ -109,8 +113,39 @@ def strip_truncated_ctrl(text: str) -> str:
     if not text:
         return text
     t = text.lstrip()
-    if not (t.startswith("{") and '"ctrl"' in t[:300]
-            and CTRL_KNOWN_KEYS_RE.search(t[:300])):
+    if t.startswith("\u27e8CTRL\u27e9"):
+        t = t[len("\u27e8CTRL\u27e9"):].lstrip()
+    # the model sometimes emits the ctrl JSON WITHOUT the '"ctrl"' wrapper
+    # (bare {"depth":...}) — accept either shape as long as a known key is
+    # present in the first line(s)
+    if not (t.startswith("{") and (
+            '"ctrl"' in t[:300] or re.match(r'\{\s*"(?:depth|tooliness|emotionality|novelty|stakes|config_delt|memory_writ|code_inten|ask)"', t))):
+        return text
+    # 0) if the JSON is COMPLETE (balanced braces), leave it for the balanced
+    #    strippers — the ',"'-cut below would mangle a valid block
+    depth = 0
+    in_str = False
+    esc = False
+    complete = False
+    for i, ch in enumerate(t[:4000]):
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                complete = True
+                break
+    if complete:
         return text
     # 1) consume leading lines that end with JSON-continuation tokens
     lines = t.split("\n")
@@ -292,6 +327,9 @@ def polish_reply(reply: str) -> str:
     if not reply:
         return reply
     t = reply
+    # literal ⟨CTRL⟩ marker the model echoes (with or without the JSON blob)
+    if t.lstrip().startswith("\u27e8CTRL\u27e9"):
+        t = t.lstrip()[len("\u27e8CTRL\u27e9"):].lstrip()
     # truncated leading ctrl JSON (no closing braces) — the model jumps to
     # prose mid-JSON; strip it so it never renders
     t = strip_truncated_ctrl(t)
@@ -321,7 +359,10 @@ def polish_history(reply: str) -> str:
     history — stops the model from imitating the old robotic style."""
     if not reply:
         return reply
-    t = strip_truncated_ctrl(reply)
+    t = reply
+    if t.lstrip().startswith("\u27e8CTRL\u27e9"):
+        t = t.lstrip()[len("\u27e8CTRL\u27e9"):].lstrip()
+    t = strip_truncated_ctrl(t)
     t = strip_leading_key_remnant(t)
     t = BANNED_HEADER_LEAD_RE.sub("", t)
     t = BANNED_HEADER_RE.sub("", t)

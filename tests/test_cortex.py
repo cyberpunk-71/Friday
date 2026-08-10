@@ -674,3 +674,29 @@ def test_stale_focus_lines_filtered_from_history_when_inactive(cortex, db):
     # when a session IS active the lines are kept (they're real context)
     kept2 = c._filter_stale_focus_history(hist, focus_active=True)
     assert any("minutes left" in h["reply"] for h in kept2)
+
+
+def test_ctrl_marker_never_leaks():
+    """Gemini echoes the literal ⟨CTRL⟩ marker before the ctrl JSON. All
+    shapes (marker+complete, marker+truncated, marker+plain-prose) must be
+    stripped; complete JSON after the marker must still parse."""
+    from core.cortex import parse_ctrl, polish_reply, strip_truncated_ctrl
+    # complete JSON after marker → parsed + prose kept
+    t2 = ('⟨CTRL⟩{"ctrl":{"depth":0.1,"tooliness":0.0,"config_deltas":{},'
+          '"memory_writes":[],"code_intent":false,"ask":[]}}\n\nHello there')
+    ctrl, rest = parse_ctrl(t2)
+    assert ctrl is not None and rest.startswith("\n\nHello there")
+    assert polish_reply(t2).startswith("Hello there")
+    # truncated JSON after marker (the observed leak) → gone
+    t1 = ('⟨CTRL⟩{"depth":0.1,"tooliness":0.0,"emotionality":0.0,"novelty":0.2,'
+          '"stakes":0.0,"config_deltas":{},\n\nEvents in Ahmedabad tomorrow...')
+    out = polish_reply(t1)
+    assert "CTRL" not in out and "depth" not in out
+    assert out.startswith("Events in Ahmedabad")
+    assert strip_truncated_ctrl(t1).startswith("Events in Ahmedabad")
+    # marker + plain prose → marker gone, prose kept
+    t3 = "⟨CTRL⟩Hey! Plain reply"
+    assert polish_reply(t3).startswith("Hey!")
+    # complete JSON WITHOUT marker (regression — the ',"'-cut must not mangle)
+    t4 = '{"ctrl":{"depth":0.1,"config_deltas":{},"memory_writes":[],"ask":[]}}\n\nHi'
+    assert polish_reply(t4).startswith("Hi")

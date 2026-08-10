@@ -94,9 +94,13 @@ function md(text) {
    prose without closing braces: '{"ctrl":{... "config_deltHey! ...').
    Mirrors core/cortex.py strip_truncated_ctrl. */
 function stripLeadingCtrl(t) {
-  if (!t || !/^\s*\{/.test(t)) return t;
+  if (!t) return t;
+  t = t.replace(/^\s*⟨CTRL⟩\s*/, "");   // model echoes the literal marker
+  if (!/^\s*\{/.test(t)) return t;
   const head = t.slice(0, 300);
-  if (!head.includes('"ctrl"') || !/"(?:depth|tooliness|emotionality|novelty|stakes|config_delt(?:as)?|memory_writ(?:es)?|code_inten(?:t)?|ask)"/.test(head)) return t;
+  // accept either the {"ctrl":...} wrapper OR a bare {"depth":...} ctrl JSON
+  const ctrlish = head.includes('"ctrl"') || /^\s*\{\s*"(?:depth|tooliness|emotionality|novelty|stakes|config_delt(?:as)?|memory_writ(?:es)?|code_inten(?:t)?|ask)"/.test(head);
+  if (!ctrlish || !/"(?:depth|tooliness|emotionality|novelty|stakes|config_delt(?:as)?|memory_writ(?:es)?|code_inten(?:t)?|ask)"/.test(head)) return t;
   // complete JSON: balanced-brace cut
   let depth = 0, inStr = false, esc = false;
   for (let i = 0; i < t.length; i++) {
