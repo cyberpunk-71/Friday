@@ -289,6 +289,45 @@ class Cortex:
         except Exception:
             return None
 
+    def _auto_heal(self, failed_name: str, err: str) -> dict | None:
+        """When the ACTIVE chat provider's key is rejected (401 / ReadError /
+        model-gone / invalid), PERMANENTLY switch the chat routing (and any
+        scope that explicitly used the dead provider) to the other provider.
+        Otherwise every single turn re-tries the broken key and warns — which
+        is exactly the spam the user just saw. Returns {from,to} or None."""
+        try:
+            low = err.lower()
+            authy = ("401" in err or "readerror" in low or "no longer available" in low
+                     or "invalid" in low or "authentication" in low
+                     or "permission" in low or "key" in low)
+            if not authy:
+                return None
+            from .db import get_db
+            db = get_db()
+            other = "gemini" if failed_name == "deepseek" else "deepseek"
+            row = db.q1(
+                "SELECT api_key FROM provider_keys WHERE provider=? AND scope='default' "
+                "AND active=1 ORDER BY updated_ts DESC LIMIT 1", (other,))
+            if not (row and row["api_key"]):
+                return None
+            # anti-flap: only auto-heal once per 15 min per provider
+            last = db.get_setting(f"llm.auto_heal_ts.{failed_name}", 0) or 0
+            if time.time() - float(last) < 900:
+                return None
+            db.set_setting("llm.provider", other)
+            db.set_setting("llm.model", None)   # model override belonged to the dead provider
+            for sc in ("research", "books", "eval"):
+                if db.get_setting(f"llm.{sc}.provider") == failed_name:
+                    db.set_setting(f"llm.{sc}.provider", other)
+                    db.set_setting(f"llm.{sc}.model", None)
+            db.set_setting(f"llm.auto_heal_ts.{failed_name}", time.time())
+            db.set_setting("llm.auto_heal", json.dumps({
+                "from": failed_name, "to": other, "ts": time.time(),
+                "reason": err[:120]}))
+            return {"from": failed_name, "to": other}
+        except Exception:
+            return None
+
     async def _deep_research(self, text: str, sense: dict, city: str) -> dict:
         """Multi-round loop: model proposes web_search/web_read/memory_recall
         → we execute → feed results back → repeat (max 3 rounds) → the final
@@ -558,6 +597,7 @@ class Cortex:
         # a mid-turn failover sets this; the stale-error clear below must NOT
         # wipe it (the admin panel should keep showing the broken provider)
         self._turn_llm_error = False
+        failovers = 0
         while True:
             try:
                 chunk = await stream.__anext__()
@@ -573,28 +613,37 @@ class Cortex:
             except Exception as e:
                 # network unavailable / bad key / provider error / mid-stream
                 # connection drop (httpx.ReadError etc) — record the REAL
-                # reason (visible in admin overview + this turn), then FAIL
-                # OVER to the other provider if a key exists for it
-                # (gemini↔deepseek), else degrade to the deterministic sim.
-                # Catching Exception (not just RuntimeError) is deliberate:
-                # httpx.ReadError is NOT a RuntimeError and used to kill the
-                # whole turn silently after 'sense'.
+                # reason (visible in admin overview + this turn), then:
+                #   1. AUTO-HEAL: if the key is rejected, switch the chat
+                #      routing to the other provider PERMANENTLY (so every
+                #      future turn doesn't re-try the dead key + warn again)
+                #   2. else fail over for this turn (gemini↔deepseek)
+                #   3. else degrade to the deterministic sim (max 3 swaps —
+                #      prevents an infinite loop if BOTH providers are down)
                 err = str(e)[:300]
                 self.db.set_setting("llm.last_error", err)
                 self.db.set_setting("llm.last_error_ts", time.time())
                 self._turn_llm_error = True
-                hint = ""
-                if "401" in err and "gemini" in err:
-                    hint = " Gemini key rejected — it may be expired or an ephemeral token; add a fresh restricted key in Admin → Models & Keys."
                 failed_name = getattr(self.llm, "name", "?")
+                healed = self._auto_heal(failed_name, err)
                 fallback = self._failover_provider(failed_name)
-                if fallback is not None:
+                if healed is not None and fallback is not None:
                     yield {"type": "warning",
-                           "message": f"{failed_name} unavailable ({err[:100]}) — failing over to {fallback.name} for this turn.{hint}"}
+                           "message": f"Your {failed_name} key is being rejected by Google "
+                                      f"({err[:80]}). I switched chat to {fallback.name} "
+                                      "automatically — add a fresh restricted key in "
+                                      "Admin → Models & Keys to use Gemini again."}
                     self.llm = fallback
                     stream = self.llm.stream(messages)
                     continue
-                yield {"type": "warning", "message": f"Live model unavailable ({err[:120]}) — using fallback.{hint}"}
+                if fallback is not None and failovers < 3:
+                    failovers += 1
+                    yield {"type": "warning",
+                           "message": f"{failed_name} unavailable ({err[:100]}) — failing over to {fallback.name} for this turn."}
+                    self.llm = fallback
+                    stream = self.llm.stream(messages)
+                    continue
+                yield {"type": "warning", "message": f"Live model unavailable ({err[:120]}) — using fallback."}
                 # the fallback's output flows through the SAME incremental
                 # ⟨CTRL⟩ parser below
                 self.llm = SimProviderFallback()

@@ -288,7 +288,11 @@ function handleChatEvent(ev, typing) {
     }
     case "card": renderCard(ev.card); break;
     case "warning": {
-      toast(`⚠ ${esc(ev.message)}`, "bad");
+      const now = Date.now();
+      if (!state.lastWarnTs || now - state.lastWarnTs > 60000) {
+        state.lastWarnTs = now;
+        toast(`⚠ ${esc(ev.message)}`, "bad");
+      }
       break;
     }
     case "ask": {
@@ -1236,6 +1240,16 @@ const ROUTE_LABEL = { chat: "Chat", research: "Deep research", books: "Books", e
 const KEYLIKE_RE = /^(sk-[A-Za-z0-9_-]{6,}|AIza[A-Za-z0-9_-]{20,}|AQ\.[A-Za-z0-9_.-]{20,})$/;
 function loadLlmRouting(ov) {
   try {
+    const heal = ov && ov.llm_auto_heal;
+    const note = $("#llm-heal-note");
+    if (note) {
+      if (heal) {
+        try {
+          const h = typeof heal === "string" ? JSON.parse(heal) : heal;
+          note.innerHTML = `<div class="chip warn" style="margin-top:8px">⚠ auto-switched from ${esc(h.from)} to ${esc(h.to)} — ${esc(h.from)} key was rejected (${esc((h.reason || "").slice(0, 60))}). Fix the key, then Apply ${esc(h.to)} again.</div>`;
+        } catch (e) { note.innerHTML = ""; }
+      } else { note.innerHTML = ""; }
+    }
     const scopes = (ov && ov.llm_scopes) || {};
     $$(".route-row").forEach(row => {
       const scope = row.dataset.scope;

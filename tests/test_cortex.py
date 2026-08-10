@@ -399,7 +399,8 @@ def test_failover_to_other_provider_on_401(cortex, db, monkeypatch):
     monkeypatch.setattr(DeepSeekProvider, "stream", fake_stream)
     events = collect(c.turn("hello there"))
     warns = [e for e in events if e["type"] == "warning"]
-    assert warns and "fail" in warns[0]["message"].lower()
+    assert warns and ("switched chat to deepseek" in warns[0]["message"].lower()
+                      or "fail" in warns[0]["message"].lower())
     done = next(e for e in events if e["type"] == "done")
     assert done["model"] == "deepseek"
     assert "DeepSeek instead" in done["reply"]
@@ -433,3 +434,94 @@ def test_failover_on_httpx_readexpress_non_runtime_error(cortex, db, monkeypatch
     assert "Recovered via failover" in done["reply"]
     # the REAL reason is recorded for the admin overview
     assert "connection closed" in (db.get_setting("llm.last_error") or "").lower()
+
+
+def test_auto_heal_switches_chat_routing(cortex, db, monkeypatch):
+    """When the active chat provider's key is REJECTED (401), chat routing
+    must switch to the other provider PERMANENTLY — not just fail over for
+    one turn — so every future turn stops re-trying the dead key."""
+    from core.cortex import Cortex
+    from core.providers import DeepSeekProvider, SimSearch
+    db.set_setting("llm.provider", "gemini")
+    db.set_setting("llm.model", "gemini-3.1-flash-lite")
+    db.set_setting("llm.research.provider", "gemini")
+    db.exec("INSERT INTO provider_keys(provider,scope,api_key,active,source,created_ts,updated_ts)"
+            " VALUES('deepseek','default','sk-valid1234567890',1,'admin',?,?)", (1, 1))
+
+    class DeadGemini:
+        name = "gemini"
+        async def stream(self, messages, **kw):
+            raise RuntimeError("gemini 401: invalid authentication credentials")
+            yield  # pragma: no cover
+
+    c = Cortex(db, llm=DeadGemini(), search=SimSearch())
+
+    async def fake_stream(self, messages, **kw):
+        yield "Healed onto DeepSeek."
+
+    monkeypatch.setattr(DeepSeekProvider, "stream", fake_stream)
+    events = collect(c.turn("hello"))
+    done = next(e for e in events if e["type"] == "done")
+    assert done["model"] == "deepseek"
+    # routing is now permanently deepseek — next turns skip gemini entirely
+    assert db.get_setting("llm.provider") == "deepseek"
+    assert db.get_setting("llm.model") is None
+    assert db.get_setting("llm.research.provider") == "deepseek"
+    heal = db.get_setting("llm.auto_heal")
+    assert heal and '"from": "gemini"' in heal
+    warns = [e for e in events if e["type"] == "warning"]
+    assert warns and "switched chat to deepseek" in warns[0]["message"]
+
+
+def test_no_auto_heal_on_transient_error(cortex, db, monkeypatch):
+    """A transient network error must NOT permanently switch routing (would
+    flap on flaky networks)."""
+    from core.cortex import Cortex
+    from core.providers import DeepSeekProvider, SimSearch
+    db.set_setting("llm.provider", "gemini")
+    db.exec("INSERT INTO provider_keys(provider,scope,api_key,active,source,created_ts,updated_ts)"
+            " VALUES('deepseek','default','sk-valid1234567890',1,'admin',?,?)", (1, 1))
+
+    class FlakyGemini:
+        name = "gemini"
+        async def stream(self, messages, **kw):
+            raise RuntimeError("gemini network error: ConnectError: timed out")
+            yield  # pragma: no cover
+
+    c = Cortex(db, llm=FlakyGemini(), search=SimSearch())
+
+    async def fake_stream(self, messages, **kw):
+        yield "ok for now"
+
+    monkeypatch.setattr(DeepSeekProvider, "stream", fake_stream)
+    collect(c.turn("hi"))
+    assert db.get_setting("llm.provider") == "gemini"   # routing untouched
+    assert db.get_setting("llm.auto_heal") is None
+
+
+def test_double_failure_terminates_with_sim(cortex, db, monkeypatch):
+    """If BOTH providers fail, the turn must terminate with the sim fallback
+    — never loop forever (the failover chain had no cap)."""
+    from core.cortex import Cortex
+    from core.providers import DeepSeekProvider, SimSearch
+    db.exec("INSERT INTO provider_keys(provider,scope,api_key,active,source,created_ts,updated_ts)"
+            " VALUES('deepseek','default','sk-valid1234567890',1,'admin',?,?)", (1, 1))
+
+    class DeadGemini:
+        name = "gemini"
+        async def stream(self, messages, **kw):
+            raise RuntimeError("gemini 401: bad key")
+            yield  # pragma: no cover
+
+    class DeadDeepSeek:
+        name = "deepseek"
+        async def stream(self, messages, **kw):
+            raise RuntimeError("deepseek network error: ReadError: closed")
+            yield  # pragma: no cover
+
+    c = Cortex(db, llm=DeadGemini(), search=SimSearch())
+    monkeypatch.setattr(DeepSeekProvider, "stream",
+                        lambda self, messages, **kw: DeadDeepSeek().stream(messages, **kw))
+    events = collect(c.turn("ping"))
+    done = next(e for e in events if e["type"] == "done")
+    assert done["model"] in ("sim", "sim-fallback")   # terminated, no hang
