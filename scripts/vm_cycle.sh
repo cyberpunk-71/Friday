@@ -243,6 +243,36 @@ op_friday_uidiff() {
   ok friday_uidiff
 }
 
+op_friday_gemtest() {
+  log friday_gemtest
+  # real Gemini round-trip from the VM using the DB-saved key — the ONLY way
+  # to see whether the key actually works (sandbox has no egress to Google)
+  OUT="${OUT}$( cd "$RUNTIME" && .venv/bin/python - <<'PY'
+import asyncio, os, sys, json
+sys.path.insert(0, os.getcwd())
+from core.db import get_db
+from core.providers import GeminiProvider
+db = get_db()
+row = db.q1("SELECT api_key FROM provider_keys WHERE provider='gemini' AND scope='default' AND active=1 ORDER BY updated_ts DESC LIMIT 1")
+if not row or not row["api_key"]:
+    print("no gemini key in DB"); raise SystemExit(0)
+key = row["api_key"]
+print("key prefix:", key[:6], "len:", len(key))
+p = GeminiProvider(api_key=key)
+async def go():
+    for auth in ("key", "bearer"):
+        try:
+            out = await p.complete([{"role": "user", "content": "say hi"}], max_tokens=10)
+            print(f"auth={auth} OK -> {out[:60]!r}")
+            return
+        except Exception as e:
+            print(f"auth={auth} FAIL -> {str(e)[:220]}")
+asyncio.get_event_loop().run_until_complete(go())
+PY
+)\n"
+  ok friday_gemtest
+}
+
 op_friday_llmfix() {
   log friday_llmfix
   # clear API keys that leaked into llm.*.model settings (admin confusion fix)
@@ -620,6 +650,7 @@ case "$CMD" in
   friday_health)      run_ops friday_health ;;
   friday_uidiff)      run_ops friday_uidiff ;;
   friday_llmfix)      run_ops friday_llmfix ;;
+  friday_gemtest)     run_ops friday_gemtest ;;
   friday_cleanhist)   run_ops friday_cleanhist ;;
   friday_test)        run_ops friday_test ;;
   friday_nginx)       run_ops friday_nginx ;;
