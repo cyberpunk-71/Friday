@@ -614,7 +614,14 @@ class Cortex:
         payment gate must fire from the user text itself (one of the two
         blocking gates — never skipped)."""
         low = text.lower()
+        # only IMPERATIVE purchases trigger the payment gate — questions and
+        # advice-asks ("is it a good time to buy?", "when should i buy it?",
+        # "can i buy X?") must NOT fire a payment task
         if not re.search(r"\b(buy|purchase|order|pay for)\b", low):
+            return None
+        if re.search(r"(should i|is it (a )?good|is it (a )?better|when should|"
+                     r"can i|do i|what should|how (do|can)|should we|worth|advice|"
+                     r"recommend me|suggest|\?)", low):
             return None
         # follow-up without item ("dont ask just buy it") → reuse last task
         item = "the item"
