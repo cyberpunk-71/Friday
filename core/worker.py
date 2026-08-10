@@ -77,12 +77,23 @@ class Worker:
     def _check_focus_completion(self, now: float) -> None:
         from .focus import Focus
         f = Focus(self.db)
-        s = f.active()
-        if s and now - s["start_ts"] >= s["target_min"] * 60:
-            f.stop()
-            self.db.exec("INSERT INTO nudges(kind,channel,message,created_ts) "
-                         "VALUES('focus','chrome',?,?)",
-                         ("Focus session complete — nice. Want a break?", now))
+        # Focus.active() auto-expires sessions past their end time (worker-
+        # independent) — this call performs the expiry if any is due
+        f.active()
+        # completion nudge for a session that just ended (auto-expired or
+        # user-stopped) — once per 30s window
+        s = self.db.q1(
+            "SELECT session_id FROM focus_sessions WHERE end_ts IS NOT NULL "
+            "AND end_ts>? AND status IN ('completed','abandoned') "
+            "ORDER BY end_ts DESC LIMIT 1", (now - 30,))
+        if s:
+            dup = self.db.q1(
+                "SELECT 1 FROM nudges WHERE kind='focus' AND channel='chrome' "
+                "AND created_ts>?", (now - 30,))
+            if not dup:
+                self.db.exec("INSERT INTO nudges(kind,channel,message,created_ts) "
+                             "VALUES('focus','chrome',?,?)",
+                             ("Focus session complete — nice. Want a break?", now))
 
     # ------------------------------------------------------------------ #
     def _nightly_if_due(self, now: float) -> None:

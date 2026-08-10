@@ -165,3 +165,36 @@ def test_focus_start_why_first_step(db):
     assert s["first_step"] == "open the doc and write the title"
     assert s["mode"] == "work"
     f.stop()
+
+
+def test_active_auto_expires_stale_session(db):
+    """A session past its end time must NOT stay 'active' — the worker that
+    used to auto-complete sessions crash-loops on some VMs, and every reply
+    kept reporting stale '18 minutes left'. active() auto-expires now."""
+    from core.focus import Focus
+    f = Focus(db)
+    f.start(25, allow=[], task="ai agent build")
+    sid = f.active()["session_id"]
+    # backdate: session started 3 hours ago → 3h > 25min
+    db.exec("UPDATE focus_sessions SET start_ts=? WHERE session_id=?",
+            (time.time() - 3 * 3600, sid))
+    assert f.active() is None
+    row = db.q1("SELECT status, end_ts FROM focus_sessions WHERE session_id=?", (sid,))
+    assert row["status"] == "completed"     # 3h elapsed ≥ 80% of 25min
+    assert row["end_ts"] is not None
+    # starting a new session right after works (no 'already active' error)
+    r = f.start(25, allow=[], task="new task")
+    assert r["ok"]
+
+
+def test_now_block_reports_llm_identity(db):
+    """<NOW> must carry the exact provider + model so the model can answer
+    'which model are you' truthfully instead of hedging."""
+    import os as _os
+    _os.environ.pop("DEEPSEEK_API_KEY", None)
+    _os.environ.pop("GEMINI_API_KEY", None)
+    from core.loom import Loom
+    nb = Loom(db).now_block()
+    assert "llm" in nb
+    assert nb["llm"]["provider"] in ("sim", "deepseek", "gemini")
+    assert isinstance(nb["llm"]["model"], str)

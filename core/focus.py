@@ -19,8 +19,30 @@ class Focus:
         self.db = db or get_db()
 
     def active(self) -> dict | None:
-        return self.db.q1("SELECT * FROM focus_sessions WHERE status='active' "
-                          "ORDER BY start_ts DESC LIMIT 1")
+        """Current active session — or None. Sessions past their end time are
+        auto-expired here (worker-independent): the SETTLE worker crash-loops
+        on some VMs, which used to leave 'active' sessions stuck forever and
+        every reply kept reporting stale '18 minutes left'."""
+        s = self.db.q1("SELECT * FROM focus_sessions WHERE status='active' "
+                       "ORDER BY start_ts DESC LIMIT 1")
+        if not s:
+            return None
+        now = time.time()
+        # on a break the session keeps running (break_end_ts), otherwise it
+        # ends at start_ts + target_min*60
+        end = s["start_ts"] + (s.get("target_min") or 25) * 60
+        if s.get("mode") == "break" and s.get("break_end_ts"):
+            end = max(end, s["break_end_ts"])
+        if now >= end:
+            elapsed = int((now - s["start_ts"]) / 60)
+            status = "completed" if elapsed >= (s.get("target_min") or 25) * 0.8 else "abandoned"
+            self.db.exec("UPDATE focus_sessions SET end_ts=?, status=? WHERE session_id=?",
+                         (now, status, s["session_id"]))
+            self.db.append_event("focus", "system", {"action": "auto_complete",
+                                                     "session_id": s["session_id"],
+                                                     "status": status})
+            return None
+        return s
 
     def _migrate_cols(self) -> None:
         """Add columns added after launch (task, why, first_step, mode,

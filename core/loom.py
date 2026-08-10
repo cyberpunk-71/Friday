@@ -286,7 +286,18 @@ class Loom:
         last_seen = last_turn["created_ts"] if last_turn else now
         loops = self.river.open_loops(limit=5)
         corrections = self.river.recent_corrections(limit=5)
-        session = db.q1("SELECT * FROM focus_sessions WHERE status='active' ORDER BY start_ts DESC LIMIT 1")
+        # Focus.active() auto-expires sessions past their end time — a raw
+        # SELECT here kept reporting stale sessions (the SETTLE worker that
+        # used to complete them crash-loops on some VMs)
+        from .focus import Focus
+        session = Focus(db).active()
+        llm = None
+        try:
+            from .providers import make_llm
+            p = make_llm("chat")
+            llm = {"provider": p.name, "model": getattr(p, "model", "") or ""}
+        except Exception:
+            pass
         trackers = db.q("SELECT tracker_id,kind,query,status FROM trackers WHERE status='active'")
         pending_approvals = db.q("SELECT task_id,title,approval_kind FROM tasks WHERE status='waiting_approval'")
         return {
@@ -296,6 +307,7 @@ class Loom:
             "focus": {"active": bool(session),
                       "minutes_left": max(0, int(session["target_min"] - (now - session["start_ts"]) / 60)) if session else None,
                       "drifts": session["drift_count"] if session else 0},
+            "llm": llm or {"provider": "unknown", "model": ""},
             "open_loops": [{"loop_id": l["loop_id"], "text": l["text"], "kind": l["kind"]} for l in loops],
             "last_corrections": [{"text": c["text"], "ts": c["ts"]} for c in corrections],
             "active_trackers": [{"id": t["tracker_id"], "kind": t["kind"], "query": t["query"]} for t in trackers[:4]],
