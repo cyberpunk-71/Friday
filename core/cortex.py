@@ -687,12 +687,33 @@ class Cortex:
         messages = [{"role": "system", "content": sys_p}]
         hist = self.db.q("SELECT user_text, reply FROM turns ORDER BY turn_id DESC LIMIT 8")
         hist.reverse()
-        for h in hist:
+        focus_active = bool(sense.get("now", {}).get("focus", {}).get("active"))
+        for h in self._filter_stale_focus_history(hist, focus_active):
             if h["user_text"] and h["reply"]:
                 messages.append({"role": "user", "content": (h["user_text"] or "")[:800]})
                 messages.append({"role": "assistant", "content": polish_history(h["reply"] or "")})
         messages.append({"role": "user", "content": text[:4000]})
         return messages
+
+    @staticmethod
+    def _filter_stale_focus_history(hist: list[dict], focus_active: bool) -> list[dict]:
+        """When NO focus session is active, drop old assistant replies that
+        talk about a running session ('18 minutes left on the AI agent build')
+        — the model kept echoing those stale phrases from history even though
+        the NOW block said focus was off. Deterministic, history-level fix."""
+        if focus_active:
+            return hist
+        STALE = re.compile(
+            r"(focus (session|mode|timer)|minutes? left|in focus (with|mode)|"
+            r"on the clock|still (in|on) focus|drift)", re.I)
+        out = []
+        for h in hist:
+            rep = h.get("reply") or ""
+            if STALE.search(rep):
+                # drop the whole turn pair (user text usually references focus too)
+                continue
+            out.append(h)
+        return out
 
     async def _stream(self, text: str, sense: dict, corr_id: str,
                       book_id: int | None = None) -> AsyncIterator[dict]:
@@ -706,7 +727,8 @@ class Cortex:
             "SELECT user_text, reply FROM turns "
             "ORDER BY turn_id DESC LIMIT 8")
         hist.reverse()
-        for h in hist:
+        focus_active = bool(sense.get("now", {}).get("focus", {}).get("active"))
+        for h in self._filter_stale_focus_history(hist, focus_active):
             if h["user_text"] and h["reply"]:
                 messages.append({"role": "user", "content": (h["user_text"] or "")[:800]})
                 messages.append({"role": "assistant", "content": polish_history(h["reply"] or "")})
@@ -1318,6 +1340,13 @@ class Cortex:
             yield {"type": "done", "reply": identity_event["message"], "latency_ms": 1,
                    "cost_usd": 0.0, "corr_id": corr_id, "model": "deterministic",
                    "slots_used": 0}
+            # SETTLE so the answer lands in chat history (chattest/refresh see it)
+            ctrl_out = {"depth": 0.1, "tooliness": 0.0, "emotionality": 0.0,
+                        "novelty": 0.2, "stakes": 0.0, "config_deltas": {},
+                        "memory_writes": [], "code_intent": False, "ask": []}
+            await asyncio.to_thread(self._settle, text, corr_id, book_id,
+                                    {"slots": [], "now": self.loom.now_block()},
+                                    ctrl_out, identity_event["message"], 1, 0.0, None)
             return
         # focus start/stop — deterministic, sub-50ms
         focus_event = self._focus_ingress(text)

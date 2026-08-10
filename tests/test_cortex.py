@@ -652,3 +652,25 @@ def test_identity_ingress_answers_real_model(cortex, db):
     events = collect(cortex.turn("which model of phone should I buy under 20k"))
     done = next(e for e in events if e["type"] == "done")
     assert done["model"] != "deterministic"
+
+
+def test_stale_focus_lines_filtered_from_history_when_inactive(cortex, db):
+    """When focus is INACTIVE, assistant history lines about a running
+    session ('18 minutes left on the AI agent build') must NOT reach the
+    model — it echoed them forever even though the NOW block said off."""
+    from core.cortex import Cortex
+    from core.providers import SimSearch
+    db.exec("INSERT INTO turns(corr_id, user_text, reply, created_ts) VALUES(?,?,?,?)",
+            ("cor_t1", "hi", "Hey! Still here, still in focus mode with you — about 18 minutes left on the AI agent build. What's up?", 1))
+    db.exec("INSERT INTO turns(corr_id, user_text, reply, created_ts) VALUES(?,?,?,?)",
+            ("cor_t2", "normal", "That's a good question about the weather.", 2))
+    c = Cortex(db, llm=None, search=SimSearch())
+    c.llm = __import__("core.providers", fromlist=["SimProvider"]).SimProvider(search=SimSearch())
+    hist = db.q("SELECT user_text, reply FROM turns")
+    kept = c._filter_stale_focus_history(hist, focus_active=False)
+    reps = [h["reply"] for h in kept]
+    assert not any("minutes left" in r for r in reps), reps
+    assert any("weather" in r for r in reps)
+    # when a session IS active the lines are kept (they're real context)
+    kept2 = c._filter_stale_focus_history(hist, focus_active=True)
+    assert any("minutes left" in h["reply"] for h in kept2)
