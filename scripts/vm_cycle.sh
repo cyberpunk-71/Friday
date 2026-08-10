@@ -658,6 +658,7 @@ case "$CMD" in
   friday_uidiff)      run_ops friday_uidiff ;;
   friday_llmfix)      run_ops friday_llmfix ;;
   friday_gemtest)     run_ops friday_gemtest ;;
+  friday_gemon)       run_ops friday_gemon ;;
   friday_cleanhist)   run_ops friday_cleanhist ;;
   friday_test)        run_ops friday_test ;;
   friday_nginx)       run_ops friday_nginx ;;
@@ -674,3 +675,22 @@ esac
 
 write_result
 exit $exit_code
+
+op_friday_gemon() {
+  log friday_gemon
+  OUT="${OUT}$( cd "$RUNTIME" && .venv/bin/python -u - <<'PY'
+import os, sys, json
+sys.path.insert(0, os.getcwd())
+from core.db import get_db
+from core.providers import GeminiProvider
+db = get_db()
+db.set_setting("llm.provider", "gemini")
+db.set_setting("llm.model", "gemini-3.6-flash")
+db.set_setting("llm.auto_heal_ts.gemini", None)
+db.set_setting("llm.auto_heal_ts.deepseek", None)
+db.set_setting("llm.auto_heal", None)
+print("routing -> gemini, model gemini-3.6-flash, heal timers reset")
+PY
+)\n"
+  ok friday_gemon
+}
