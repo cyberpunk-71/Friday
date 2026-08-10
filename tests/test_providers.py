@@ -222,3 +222,103 @@ def test_bing_parser():
     assert out[0]["url"] == "https://example.org/garba"
     assert "Garba" in out[0]["title"]
     assert "riverfront" in out[0]["snippet"].lower()
+
+
+# =========================================================================== #
+# Gemini provider — message/tool conversion + routing (no network)
+# =========================================================================== #
+def test_gemini_contents_conversion():
+    from core.providers import _gemini_contents
+    messages = [
+        {"role": "system", "content": "You are Friday."},
+        {"role": "user", "content": "who are you"},
+        {"role": "assistant", "content": "I'm Friday."},
+        {"role": "user", "content": "search the web"},
+        {"role": "assistant", "content": None,
+         "tool_calls": [{"id": "t1", "name": "web_search",
+                         "arguments": '{"query": "ahmedabad events"}'}]},
+        {"role": "tool", "name": "web_search", "content": "results here"},
+        {"role": "user", "content": "thanks"},
+    ]
+    contents, sys_parts = _gemini_contents(messages)
+    assert sys_parts == [{"text": "You are Friday."}]
+    assert contents[0]["role"] == "user"
+    assert contents[0]["parts"][0]["text"] == "who are you"
+    assert contents[1]["role"] == "model" and contents[1]["parts"][0]["text"] == "I'm Friday."
+    # assistant tool_call → functionCall part (index 3 after sys/user/model/user)
+    fc = contents[3]
+    assert fc["role"] == "model"
+    assert fc["parts"][0]["functionCall"]["name"] == "web_search"
+    assert fc["parts"][0]["functionCall"]["args"] == {"query": "ahmedabad events"}
+    # tool response → functionResponse part; consecutive users merged
+    tr = contents[4]
+    assert tr["role"] == "user"
+    assert tr["parts"][0]["functionResponse"]["name"] == "web_search"
+    assert tr["parts"][0]["functionResponse"]["response"]["result"] == "results here"
+    # trailing user merged into the same user turn
+    texts = " ".join(p.get("text", "") for p in tr["parts"])
+    assert "thanks" in texts
+
+
+def test_gemini_tools_conversion():
+    from core.providers import _gemini_tools, TOOL_SCHEMAS
+    g = _gemini_tools(TOOL_SCHEMAS)
+    assert g and len(g) == 1
+    decls = g[0]["functionDeclarations"]
+    names = [d["name"] for d in decls]
+    assert names == ["web_search", "web_read", "memory_recall"]
+    assert decls[0]["parameters"]["required"] == ["query"]
+
+
+def test_gemini_provider_parses_tool_response():
+    """complete_tools must convert Gemini functionCall parts back into the
+    OpenAI-style shape cortex expects ({content, tool_calls:[{name,arguments}]})."""
+    from core.providers import GeminiProvider
+    p = GeminiProvider(api_key="AIza-test-key")
+    # monkeypatch the network call
+    async def fake_post(url, **kwargs):
+        class _R:
+            status_code = 200
+            text = ""
+            async def aread(self):
+                return b""
+            def json(self):
+                return {"candidates": [{
+                    "content": {"parts": [
+                        {"functionCall": {"name": "web_search",
+                                          "args": {"query": "garba ahmedabad"}}}]},
+                    "finishReason": "STOP"}]}
+        return _R()
+    _fake = type("C", (), {})()
+    _fake.post = fake_post          # instance attr → not bound, url stays positional
+    p.client = lambda: _fake
+    import asyncio
+    out = asyncio.get_event_loop().run_until_complete(
+        p.complete_tools([{"role": "user", "content": "find garba"}],
+                         [{"type": "function", "function": {"name": "web_search"}}]))
+    assert out["tool_calls"][0]["name"] == "web_search"
+    import json as _json
+    assert _json.loads(out["tool_calls"][0]["arguments"]) == {"query": "garba ahmedabad"}
+
+
+def test_make_llm_gemini_routing(db):
+    """llm.provider=gemini + a saved gemini key → GeminiProvider wins."""
+    import os as _os
+    from core.providers import make_llm
+    _os.environ.pop("DEEPSEEK_API_KEY", None)
+    _os.environ.pop("GEMINI_API_KEY", None)
+    db.set_setting("llm.provider", "gemini")
+    db.exec("INSERT INTO provider_keys(provider,scope,api_key,active,source,created_ts,updated_ts)"
+            " VALUES('gemini','default','AIza-fake-1234567890',1,'admin',?,?)",
+            (1, 1))
+    p = make_llm()
+    assert p.name == "gemini", p.name
+    # model override honored
+    db.set_setting("llm.model", "gemini-2.0-flash")
+    p2 = make_llm()
+    assert p2.model == "gemini-2.0-flash"
+    # switching back to deepseek without a deepseek key → env fallback → sim
+    db.set_setting("llm.provider", "deepseek")
+    db.exec("DELETE FROM provider_keys WHERE provider='gemini'")
+    p3 = make_llm()
+    assert p3.name in ("sim", "deepseek")

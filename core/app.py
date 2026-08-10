@@ -197,6 +197,8 @@ async def admin_overview(request: Request, _: bool = Depends(_admin_auth)):
                 "active,source FROM provider_keys")
     return {
         "version": APP_VERSION, "model": os.environ.get("DEEPSEEK_MODEL", "deepseek-chat"),
+        "llm_model": (getattr(request.app.state.cortex.llm, "model", "")
+                      if getattr(request.app.state, "cortex", None) else ""),
         # report the ACTUAL running provider (from the live cortex), not env
         "llm_provider": (request.app.state.cortex.llm.name
                          if getattr(request.app.state, "cortex", None) else "unknown"),
@@ -252,13 +254,23 @@ async def models_configure(payload: dict, request: Request, _: bool = Depends(_a
     # wire the key live based on provider
     if provider == "deepseek" and scope == "default":
         os.environ["DEEPSEEK_API_KEY"] = key
+        db.set_setting("llm.provider", "deepseek")
         from .providers import DeepSeekProvider
-        request.app.state.cortex.llm = DeepSeekProvider(api_key=key)
+        if getattr(request.app.state, "cortex", None):
+            request.app.state.cortex.llm = DeepSeekProvider(
+                api_key=key, model=db.get_setting("llm.model", "") or None)
         env_path = cfg.root / ".env"
         if env_path.exists():
             lines = [l for l in env_path.read_text().splitlines()
                      if not l.startswith("DEEPSEEK_API_KEY=")]
             env_path.write_text("\n".join(lines) + "\n")
+    elif provider == "gemini" and scope == "default":
+        os.environ["GEMINI_API_KEY"] = key
+        db.set_setting("llm.provider", "gemini")
+        from .providers import GeminiProvider
+        if getattr(request.app.state, "cortex", None):
+            request.app.state.cortex.llm = GeminiProvider(
+                api_key=key, model=db.get_setting("llm.model", "") or None)
     elif provider in ("tavily", "brave", "exa", "search"):
         # live-swap the search provider so the new key takes effect immediately
         os.environ["SEARCH_PROVIDER"] = "tavily" if provider == "tavily" else "duckduckgo"
@@ -274,18 +286,47 @@ async def models_configure(payload: dict, request: Request, _: bool = Depends(_a
     return {"ok": True, "provider": provider, "scope": scope, "masked": f"••••{key[-4:]}"}
 
 
+@app.post("/api/admin/llm")
+async def admin_llm_switch(payload: dict, request: Request, _: bool = Depends(_admin_auth)):
+    """Switch the ACTIVE chat model (deepseek ↔ gemini) + optional model
+    override, using keys already saved in Models & Keys. No key re-entry."""
+    db = get_db()
+    provider = str(payload.get("provider", "deepseek"))
+    model = str(payload.get("model", "") or "").strip()
+    if provider not in ("deepseek", "gemini"):
+        raise HTTPException(400, "provider must be deepseek or gemini")
+    db.set_setting("llm.provider", provider)
+    db.set_setting("llm.model", model or None)
+    from .providers import make_llm
+    llm = make_llm()
+    if getattr(request.app.state, "cortex", None):
+        request.app.state.cortex.llm = llm
+    return {"ok": True, "provider": llm.name,
+            "model": getattr(llm, "model", ""),
+            "note": f"chat now runs on {llm.name}"}
+
+
 @app.post("/api/admin/providers/test")
 async def providers_test(payload: Optional[dict] = None, _: bool = Depends(_admin_auth)):
-    """Test the DeepSeek provider. Returns categorized diagnostics:
-    blocked (no egress / TLS), invalid_key, or ok with a live reply."""
-    from .providers import DeepSeekProvider
-    key = (payload.get("api_key") if payload else None) or os.environ.get("DEEPSEEK_API_KEY", "")
-    if not key:
-        return {"ok": False, "error": "no key configured — set it in Models & Keys or tell Friday in chat"}
-    p = DeepSeekProvider(api_key=key)
+    """Test the configured LLM provider (deepseek or gemini). Returns
+    categorized diagnostics: blocked (no egress / TLS), invalid_key, or ok."""
+    from .providers import DeepSeekProvider, GeminiProvider
+    provider = (payload.get("provider") if payload else None) or "deepseek"
+    if provider == "gemini":
+        key = (payload.get("api_key") if payload else None) or os.environ.get("GEMINI_API_KEY", "")
+        if not key:
+            return {"ok": False, "error": "no Gemini key — add it in Models & Keys first"}
+        p = GeminiProvider(api_key=key)
+        tag = "Gemini"
+    else:
+        key = (payload.get("api_key") if payload else None) or os.environ.get("DEEPSEEK_API_KEY", "")
+        if not key:
+            return {"ok": False, "error": "no key configured — set it in Models & Keys or tell Friday in chat"}
+        p = DeepSeekProvider(api_key=key)
+        tag = "DeepSeek"
     try:
         out = await p.complete([{"role": "user", "content": "ping"}], max_tokens=5)
-        return {"ok": True, "reply": out[:50], "note": "live DeepSeek call succeeded"}
+        return {"ok": True, "reply": out[:50], "note": f"live {tag} call succeeded"}
     except RuntimeError as e:
         msg = str(e)
         if "network unreachable" in msg or "TLS" in msg or "SSL" in msg or "ConnectError" in msg:

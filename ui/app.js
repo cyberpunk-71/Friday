@@ -1201,6 +1201,7 @@ async function loadAdmin() {
   const ov = await api("/api/admin/overview");
   renderOverview(ov);
   renderKeys(ov.provider_keys);
+  loadLlmRouting(ov);
   loadParams();
   loadSpend();
   loadTurns();
@@ -1218,8 +1219,28 @@ function renderOverview(ov) {
 }
 function renderKeys(keys) {
   $("#provider-keys").innerHTML = `<h4 style="margin:10px 0">Provider keys (masked)</h4>` +
-    keys.map(k => `<div class="hist-row"><span class="chip">${esc(k.provider)}</span><span class="chip">${esc(k.scope)}</span><span>${esc(k.masked)}</span><span class="chip ${k.active ? "good" : "bad"}">${k.active ? "active" : "off"}</span><span class="dim">${esc(k.source)}</span></div>`).join("") || `<div class="dim">no keys — configure below or just tell Friday your key in chat</div>`;
+    keys.map(k => `<div class="hist-row"><span class="chip ${k.provider === "gemini" ? "alpha" : ""}">${esc(k.provider)}</span><span class="chip">${esc(k.scope)}</span><span>${esc(k.masked)}</span><span class="chip ${k.active ? "good" : "bad"}">${k.active ? "active" : "off"}</span><span class="dim">${esc(k.source)}</span></div>`).join("") || `<div class="dim">no keys — configure below or just tell Friday your key in chat</div>`;
 }
+
+/* Active chat model — shows what chat runs on, switch without re-entering keys */
+async function loadLlmRouting(ov) {
+  try {
+    const s = await api("/api/admin/settings");
+    const prov = s["llm.provider"] || (String(ov.llm_provider || "").includes("gemini") ? "gemini" : "deepseek");
+    $("#llm-provider").value = prov;
+    $("#llm-model").value = s["llm.model"] || "";
+    const cur = `${esc(ov.llm_provider || "sim")}${ov.llm_model ? " · " + esc(ov.llm_model) : ""}`;
+    $("#llm-status").innerHTML = `<span class="chip good">now running: ${cur}</span> <span class="dim">switch needs a saved key for the target provider</span>`;
+  } catch (e) {}
+}
+$("#llm-save").addEventListener("click", async () => {
+  try {
+    const r = await api("/api/admin/llm", { method: "POST", body: JSON.stringify({ provider: $("#llm-provider").value, model: $("#llm-model").value }) });
+    $("#llm-status").innerHTML = `<span class="chip good">✓ chat now runs on ${esc(r.provider)} · ${esc(r.model)}</span>`;
+    toast(`Switched chat to ${r.provider}`, "good");
+    setTimeout(() => loadAdmin(), 1200);
+  } catch (e) { $("#llm-status").innerHTML = `<span class="chip bad">✗ ${esc(e.message)}</span>`; }
+});
 $("#mc-save").addEventListener("click", async () => {
   const body = { provider: $("#mc-provider").value, scope: "default", api_key: $("#mc-key").value };
   if (!body.api_key) return toast("enter a key");
@@ -1228,7 +1249,7 @@ $("#mc-save").addEventListener("click", async () => {
 });
 $("#mc-test").addEventListener("click", async () => {
   $("#mc-result").innerHTML = "testing…";
-  const r = await api("/api/admin/providers/test", { method: "POST", body: JSON.stringify({ api_key: $("#mc-key").value || null }) });
+  const r = await api("/api/admin/providers/test", { method: "POST", body: JSON.stringify({ api_key: $("#mc-key").value || null, provider: $("#mc-provider").value }) });
   $("#mc-result").innerHTML = r.ok ? `<span class="chip good">✓ replied: ${esc(r.reply)}</span>` : `<span class="chip bad">✗ ${esc(r.error)}</span>`;
 });
 $("#oc-go").addEventListener("click", async () => {

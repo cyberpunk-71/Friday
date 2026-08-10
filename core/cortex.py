@@ -698,8 +698,9 @@ class Cortex:
 
     @staticmethod
     def _provider_key(text: str) -> dict | None:
-        """'this is my new deep seek api kes sk-9f3c... for research use case'"""
-        m = re.search(r"\b(sk-[A-Za-z0-9_\-]{6,})\b", text)
+        """'this is my new deep seek api kes sk-9f3c... for research use case'
+        Gemini keys look like 'AIzaSy...' — both are recognized here."""
+        m = re.search(r"\b(sk-[A-Za-z0-9_\-]{6,}|AIza[A-Za-z0-9_\-]{20,})\b", text)
         if not m:
             return None
         low = text.lower()
@@ -709,15 +710,23 @@ class Cortex:
             if s in low:
                 scope = s
                 break
-        provider = "voice" if "voice" in low and "deep" not in low else "deepseek"
+        if key.startswith("AIza"):
+            provider = "gemini"
+        elif "voice" in low and "deep" not in low:
+            provider = "voice"
+        else:
+            provider = "deepseek"
         db = get_db()
         db.exec("INSERT INTO provider_keys(provider,scope,api_key,active,source,created_ts,updated_ts)"
                 " VALUES(?,?,?,1,'chat',?,?) "
                 "ON CONFLICT(provider,scope) DO UPDATE SET api_key=excluded.api_key,"
                 " source='chat', updated_ts=excluded.updated_ts",
                 (provider, scope, key, time.time(), time.time()))
+        # a Gemini key typed in chat becomes the live LLM provider
+        if provider == "gemini" and scope == "default":
+            db.set_setting("llm.provider", "gemini")
         return {"scope": scope, "masked": f"••••{key[-4:]}", "provider": provider,
-                "message": f"Got it — {scope} API key updated to ••••{key[-4:]}."}
+                "message": f"Got it — {provider} API key updated ({scope} scope) to ••••{key[-4:]}."}
 
     def _focus_ingress(self, text: str) -> dict | None:
         """Deterministic focus state machine — typo-tolerant and multi-turn:
@@ -1004,6 +1013,13 @@ class Cortex:
         # scoped API keys via chat — security-sensitive, never model-dependent
         key_event = self._provider_key(text)
         if key_event:
+            # live-swap the LLM so a Gemini/DeepSeek key typed in chat takes
+            # effect on THIS turn, not only after a restart
+            try:
+                from .providers import make_llm
+                self.llm = make_llm()
+            except Exception:
+                pass
             yield {"type": "ctrl", "ctrl": {"depth": 0.1, "tooliness": 0.0,
                                             "emotionality": 0.0, "novelty": 0.2,
                                             "stakes": 0.0, "config_deltas": {},

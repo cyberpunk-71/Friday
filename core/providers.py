@@ -164,6 +164,196 @@ class DeepSeekProvider(LLMProvider):
 
 
 # --------------------------------------------------------------------------- #
+# Google Gemini provider — same LLMProvider contract (stream / complete /
+# complete_tools), using the v1beta generateContent API. OpenAI-style
+# messages and tools are converted to Gemini's contents + functionDeclarations.
+# --------------------------------------------------------------------------- #
+GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"
+GEMINI_DEFAULT_MODEL = "gemini-2.5-flash"
+
+
+def _gemini_contents(messages: list[dict]) -> tuple[list[dict], list[dict]]:
+    """OpenAI-style messages → (Gemini contents, systemInstruction parts)."""
+    contents: list[dict] = []
+    sys_parts: list[dict] = []
+    for m in messages:
+        role = m.get("role", "user")
+        if role == "system":
+            sys_parts.append({"text": m.get("content") or ""})
+        elif role == "tool":
+            contents.append({"role": "user", "parts": [{
+                "functionResponse": {
+                    "name": m.get("name") or "tool",
+                    "response": {"result": m.get("content") or ""},
+                }}]})
+        elif role == "assistant":
+            parts: list[dict] = []
+            if m.get("content"):
+                parts.append({"text": m["content"]})
+            for tc in (m.get("tool_calls") or []):
+                try:
+                    args = json.loads(tc.get("arguments") or "{}")
+                except Exception:
+                    args = {}
+                parts.append({"functionCall": {
+                    "name": tc.get("name") or "tool", "args": args}})
+            if parts:
+                contents.append({"role": "model", "parts": parts})
+        else:
+            content = m.get("content") or ""
+            if isinstance(content, list):
+                content = " ".join(
+                    str(p.get("text", "")) if isinstance(p, dict) else str(p)
+                    for p in content)
+            contents.append({"role": "user", "parts": [{"text": content}]})
+    # Gemini rejects consecutive same-role turns → merge them
+    merged: list[dict] = []
+    for c in contents:
+        if merged and merged[-1]["role"] == c["role"]:
+            merged[-1]["parts"].extend(c["parts"])
+        else:
+            merged.append(c)
+    return merged, sys_parts
+
+
+def _gemini_tools(tools: list[dict]) -> list[dict] | None:
+    """OpenAI function-calling schemas → Gemini functionDeclarations."""
+    fns: list[dict] = []
+    for t in tools or []:
+        fn = t.get("function") if isinstance(t, dict) else None
+        if not fn:
+            continue
+        decl: dict = {"name": fn.get("name", ""), "description": fn.get("description", "")}
+        params = fn.get("parameters")
+        if params:
+            decl["parameters"] = params
+        fns.append(decl)
+    return [{"functionDeclarations": fns}] if fns else None
+
+
+class GeminiProvider(LLMProvider):
+    name = "gemini"
+
+    def __init__(self, api_key: str | None = None, base_url: str | None = None,
+                 model: str | None = None) -> None:
+        self.api_key = api_key or os.environ.get("GEMINI_API_KEY", "")
+        self.base_url = (base_url or os.environ.get("GEMINI_BASE_URL", GEMINI_BASE)).rstrip("/")
+        self.model = model or os.environ.get("GEMINI_MODEL", GEMINI_DEFAULT_MODEL)
+        self._client: httpx.AsyncClient | None = None
+
+    @property
+    def available(self) -> bool:
+        return bool(self.api_key)
+
+    def client(self) -> httpx.AsyncClient:
+        if self._client is None:
+            self._client = httpx.AsyncClient(
+                base_url=self.base_url, timeout=httpx.Timeout(120.0, connect=4.0))
+        return self._client
+
+    def _body(self, messages: list[dict], temperature: float, max_tokens: int | None,
+              tools: list[dict] | None = None) -> dict:
+        contents, sys_parts = _gemini_contents(messages)
+        body: dict = {
+            "contents": contents,
+            "generationConfig": {"temperature": temperature},
+        }
+        if sys_parts:
+            body["systemInstruction"] = {"parts": sys_parts}
+        if max_tokens:
+            body["generationConfig"]["maxOutputTokens"] = max_tokens
+        gtools = _gemini_tools(tools)
+        if gtools:
+            body["tools"] = gtools
+        return body
+
+    def _headers(self) -> dict:
+        return {"x-goog-api-key": self.api_key, "Content-Type": "application/json"}
+
+    async def stream(self, messages: list[dict], json_mode: bool = False,
+                     temperature: float = 0.6, max_tokens: int | None = None,
+                     **kw) -> AsyncIterator[str]:
+        body = self._body(messages, temperature, max_tokens)
+        url = f"/models/{kw.get('model', self.model)}:streamGenerateContent?alt=sse"
+        try:
+            async with self.client().stream("POST", url, json=body,
+                                            headers=self._headers()) as resp:
+                if resp.status_code != 200:
+                    err = (await resp.aread()).decode()[:400]
+                    raise RuntimeError(f"gemini {resp.status_code}: {err}")
+                async for line in resp.aiter_lines():
+                    if not line.startswith("data:"):
+                        continue
+                    data = line[5:].strip()
+                    if not data:
+                        continue
+                    try:
+                        obj = json.loads(data)
+                    except json.JSONDecodeError:
+                        continue
+                    for cand in obj.get("candidates", []) or []:
+                        for part in (cand.get("content", {}).get("parts", []) or []):
+                            if part.get("text"):
+                                yield part["text"]
+        except httpx.ConnectError as e:
+            raise RuntimeError(f"network unreachable for {self.name}: {e}") from e
+
+    async def complete(self, messages: list[dict], json_mode: bool = False,
+                       temperature: float = 0.6, max_tokens: int | None = None,
+                       **kw) -> str:
+        body = self._body(messages, temperature, max_tokens)
+        url = f"/models/{kw.get('model', self.model)}:generateContent"
+        try:
+            resp = await self.client().post(url, json=body, headers=self._headers())
+            if resp.status_code != 200:
+                err = resp.text[:400]
+                raise RuntimeError(f"gemini {resp.status_code}: {err}")
+            obj = resp.json()
+            parts = (obj.get("candidates", [{}])[0].get("content", {}).get("parts", []) or [])
+            return "".join(p.get("text", "") for p in parts)
+        except httpx.ConnectError as e:
+            raise RuntimeError(f"network unreachable for {self.name}: {e}") from e
+
+    async def complete_tools(self, messages: list[dict], tools: list[dict],
+                             temperature: float = 0.3, max_tokens: int = 600,
+                             tool_choice: str | None = None) -> dict:
+        body = self._body(messages, temperature, max_tokens, tools=tools)
+        url = f"/models/{self.model}:generateContent"
+        try:
+            resp = await self.client().post(url, json=body, headers=self._headers())
+            if resp.status_code != 200:
+                err = resp.text[:400]
+                raise RuntimeError(f"gemini {resp.status_code}: {err}")
+            obj = resp.json()
+            cand = (obj.get("candidates") or [{}])[0]
+            parts = (cand.get("content", {}).get("parts", []) or [])
+            out: dict = {"content": "", "finish": cand.get("finishReason", ""),
+                         "tool_calls": []}
+            for p in parts:
+                if "text" in p:
+                    out["content"] += p["text"]
+                elif "functionCall" in p:
+                    fc = p["functionCall"]
+                    out["tool_calls"].append({
+                        "id": f"{fc.get('name', 'tool')}_{len(out['tool_calls'])}",
+                        "name": fc.get("name", ""),
+                        "arguments": json.dumps(fc.get("args", {}), ensure_ascii=False),
+                    })
+            return out
+        except httpx.ConnectError as e:
+            raise RuntimeError(f"network unreachable for {self.name}: {e}") from e
+
+    @staticmethod
+    def usage_cost(usage: dict) -> float:
+        """Gemini 2.5 Flash pricing: $0.30/M in, $2.50/M out."""
+        if not usage:
+            return 0.0
+        cin = usage.get("promptTokenCount", usage.get("prompt_tokens", 0))
+        out = usage.get("candidatesTokenCount", usage.get("completion_tokens", 0))
+        return (cin / 1e6) * 0.30 + (out / 1e6) * 2.50
+
+
+# --------------------------------------------------------------------------- #
 # Offline simulated provider — deterministic, exercises the whole pipeline.
 # Used by tests + when no API key is configured (offline mode).
 # --------------------------------------------------------------------------- #
@@ -481,23 +671,40 @@ TOOL_SCHEMAS: list[dict] = [
 
 
 def make_llm() -> LLMProvider:
-    """Provider selection with precedence: DB provider_keys (admin panel /
-    chat-set) > .env DEEPSEEK_API_KEY > offline sim."""
-    # 1. DB key (admin panel / chat) wins — it's the user's live choice
+    """Provider selection with precedence:
+      1. DB setting llm.provider (admin panel "Active chat model") + the
+         matching DB provider_key — the user's live choice.
+      2. .env DEEPSEEK_API_KEY / GEMINI_API_KEY.
+      3. offline sim."""
     try:
         from .db import get_db
-        row = get_db().q1(
+        db = get_db()
+        want = db.get_setting("llm.provider", "deepseek") or "deepseek"
+        model = db.get_setting("llm.model", "") or ""
+        # Gemini first if selected
+        if want == "gemini":
+            row = db.q1(
+                "SELECT api_key FROM provider_keys WHERE provider='gemini' "
+                "AND scope='default' AND active=1 ORDER BY updated_ts DESC LIMIT 1")
+            if row and row["api_key"]:
+                return GeminiProvider(api_key=row["api_key"], model=model or None)
+        # DeepSeek (default)
+        row = db.q1(
             "SELECT api_key FROM provider_keys WHERE provider='deepseek' "
             "AND scope='default' AND active=1 ORDER BY updated_ts DESC LIMIT 1")
         if row and row["api_key"]:
-            return DeepSeekProvider(api_key=row["api_key"])
+            return DeepSeekProvider(api_key=row["api_key"], model=model or None)
+        # if user picked gemini but has no gemini key yet, fall through to env
     except Exception:
         pass
-    # 2. env key (deploy-provided)
+    # env keys (deploy-provided)
     key = os.environ.get("DEEPSEEK_API_KEY", "")
     if key:
         return DeepSeekProvider(api_key=key)
-    # 3. offline deterministic
+    gkey = os.environ.get("GEMINI_API_KEY", "")
+    if gkey:
+        return GeminiProvider(api_key=gkey)
+    # offline deterministic
     return SimProvider()
 
 
