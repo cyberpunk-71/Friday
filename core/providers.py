@@ -521,9 +521,9 @@ class SearchProvider:
 
 class TavilySearch(SearchProvider):
     async def search(self, query: str, max_results: int = 6) -> list[dict]:
-        key = os.environ.get("TAVILY_API_KEY", "")
+        key = _db_key("tavily") or os.environ.get("TAVILY_API_KEY", "")
         if not key:
-            raise RuntimeError("no TAVILY_API_KEY")
+            raise RuntimeError("no tavily key")
         async with httpx.AsyncClient(timeout=20) as c:
             r = await c.post("https://api.tavily.com/search", json={
                 "api_key": key, "query": query, "max_results": max_results,
@@ -763,11 +763,24 @@ class DuckDuckGoSearch(SearchProvider):
         return out
 
 
+def _db_key(provider: str) -> str:
+    """Admin-panel key for a provider (provider_keys table)."""
+    try:
+        from .db import get_db
+        row = get_db().q1(
+            "SELECT api_key FROM provider_keys WHERE provider=? "
+            "AND scope='default' AND active=1 ORDER BY updated_ts DESC LIMIT 1",
+            (provider,))
+        return (row or {}).get("api_key", "")
+    except Exception:
+        return ""
+
+
 def make_search() -> SearchProvider:
     prov = os.environ.get("SEARCH_PROVIDER", "duckduckgo")
-    if prov == "tavily" and os.environ.get("TAVILY_API_KEY"):
+    if (prov == "tavily" or _db_key("tavily")) and (_db_key("tavily") or os.environ.get("TAVILY_API_KEY")):
         return TavilySearch()
-    if prov == "sim":
+    if prov == "sim" and not _db_key("tavily") and not os.environ.get("TAVILY_API_KEY"):
         return SimSearch()
     return DuckDuckGoSearch()
 

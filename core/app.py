@@ -249,18 +249,28 @@ async def models_configure(payload: dict, request: Request, _: bool = Depends(_a
             "ON CONFLICT(provider,scope) DO UPDATE SET api_key=excluded.api_key,"
             " active=1, source='admin', updated_ts=excluded.updated_ts",
             (provider, scope, key, time.time(), time.time()))
-    # if this is THE deepseek key, wire it live (and it persists in the DB —
-    # make_llm() reads the DB first, so restarts keep the admin-panel key)
+    # wire the key live based on provider
     if provider == "deepseek" and scope == "default":
         os.environ["DEEPSEEK_API_KEY"] = key
         from .providers import DeepSeekProvider
         request.app.state.cortex.llm = DeepSeekProvider(api_key=key)
-        # remove the stale deploy key from .env so it never wins again
         env_path = cfg.root / ".env"
         if env_path.exists():
             lines = [l for l in env_path.read_text().splitlines()
                      if not l.startswith("DEEPSEEK_API_KEY=")]
             env_path.write_text("\n".join(lines) + "\n")
+    elif provider in ("tavily", "brave", "exa", "search"):
+        # live-swap the search provider so the new key takes effect immediately
+        os.environ["SEARCH_PROVIDER"] = "tavily" if provider == "tavily" else "duckduckgo"
+        from .providers import make_search
+        request.app.state.cortex.search = make_search()
+        request.app.state.cortex.hermes.search = request.app.state.cortex.search
+        request.app.state.cortex.hands.search = request.app.state.cortex.search
+        request.app.state.worker.search = request.app.state.cortex.search
+    elif provider in ("groq", "voice"):
+        os.environ["GROQ_API_KEY"] = key
+        from .voice import Voice
+        # voice reads the key live on next TTS call
     return {"ok": True, "provider": provider, "scope": scope, "masked": f"••••{key[-4:]}"}
 
 

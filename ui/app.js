@@ -669,9 +669,9 @@ function renderKeys(keys) {
     keys.map(k => `<div class="hist-row"><span class="chip">${esc(k.provider)}</span><span class="chip">${esc(k.scope)}</span><span>${esc(k.masked)}</span><span class="chip ${k.active ? "good" : "bad"}">${k.active ? "active" : "off"}</span><span class="dim">${esc(k.source)}</span></div>`).join("") || `<div class="dim">no keys — configure below or just tell Friday your key in chat</div>`;
 }
 $("#mc-save").addEventListener("click", async () => {
-  const body = { provider: $("#mc-provider").value, scope: $("#mc-scope").value, api_key: $("#mc-key").value };
+  const body = { provider: $("#mc-provider").value, scope: "default", api_key: $("#mc-key").value };
   if (!body.api_key) return toast("enter a key");
-  try { const r = await api("/api/admin/models/configure", { method: "POST", body: JSON.stringify(body) }); $("#mc-result").innerHTML = `<span class="chip good">✓ ${esc(r.provider)}/${esc(r.scope)} → ${esc(r.masked)}</span>`; loadAdmin(); }
+  try { const r = await api("/api/admin/models/configure", { method: "POST", body: JSON.stringify(body) }); $("#mc-result").innerHTML = `<span class="chip good">✓ ${esc(r.provider)} → ${esc(r.masked)} (live)</span>`; $("#mc-key").value = ""; loadAdmin(); }
   catch (e) { $("#mc-result").innerHTML = `<span class="chip bad">${esc(e.message)}</span>`; }
 });
 $("#mc-test").addEventListener("click", async () => {
