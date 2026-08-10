@@ -735,3 +735,143 @@ table.data th { background: var(--card-2); font-size: 10px; text-transform: uppe
   min-height: 4px; position: relative; transition: height .4s ease;
 }
 .fs-bar span { position: absolute; bottom: -16px; left: 50%; transform: translateX(-50%); font-size: 9px; color: var(--dim); font-weight: 700; }
+
+/* ============================================================
+   FOCUS SANCTUARY — peaceful flagship scene
+   ============================================================ */
+/* aurora behind the whole focus view, phase-tinted */
+#view-focus { position: relative; }
+#view-focus::before {
+  content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background:
+    radial-gradient(60% 50% at 20% 0%, rgba(255,154,61,.10), transparent 60%),
+    radial-gradient(55% 45% at 85% 10%, rgba(255,94,58,.08), transparent 60%),
+    radial-gradient(70% 55% at 50% 100%, rgba(14,165,164,.07), transparent 60%);
+  transition: background 1.2s ease;
+  animation: bd-aurora 14s ease-in-out infinite alternate;
+}
+@keyframes bd-aurora {
+  0%   { filter: hue-rotate(0deg) brightness(1); }
+  50%  { filter: hue-rotate(8deg) brightness(1.04); }
+  100% { filter: hue-rotate(-6deg) brightness(.98); }
+}
+#view-focus.phase-push::before {
+  background:
+    radial-gradient(60% 50% at 20% 0%, rgba(167,139,250,.12), transparent 60%),
+    radial-gradient(55% 45% at 85% 10%, rgba(255,154,61,.10), transparent 60%),
+    radial-gradient(70% 55% at 50% 100%, rgba(255,94,58,.08), transparent 60%);
+}
+#view-focus.phase-break::before {
+  background:
+    radial-gradient(60% 50% at 20% 0%, rgba(14,165,164,.12), transparent 60%),
+    radial-gradient(55% 45% at 85% 10%, rgba(52,211,153,.08), transparent 60%),
+    radial-gradient(70% 55% at 50% 100%, rgba(14,165,164,.07), transparent 60%);
+}
+#view-focus.phase-celebrate::before {
+  background:
+    radial-gradient(60% 50% at 50% 20%, rgba(255,154,61,.14), transparent 60%),
+    radial-gradient(55% 45% at 20% 80%, rgba(167,139,250,.10), transparent 60%),
+    radial-gradient(55% 45% at 85% 80%, rgba(52,211,153,.10), transparent 60%);
+}
+#view-focus > * { position: relative; z-index: 1; }
+
+/* companion aura */
+.bd-aura {
+  position: absolute; width: 150px; height: 150px; left: 50%; top: 8px;
+  transform: translateX(-50%); border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle, rgba(255,120,73,.25), rgba(255,120,73,0) 65%);
+  animation: bd-aura-breathe 3.6s ease-in-out infinite;
+  filter: blur(6px);
+}
+.bd-aura.teal { background: radial-gradient(circle, rgba(14,165,164,.25), rgba(14,165,164,0) 65%); }
+@keyframes bd-aura-breathe {
+  0%, 100% { transform: translateX(-50%) scale(1); opacity: .75; }
+  50% { transform: translateX(-50%) scale(1.12); opacity: 1; }
+}
+
+/* ritual intake — three soft sections */
+.bd-ritual-head {
+  font-family: var(--serif); font-size: 20px; font-weight: 700;
+  text-align: center; margin-bottom: 14px; letter-spacing: -.01em;
+}
+.bd-section {
+  background: var(--card-2); border: 1px solid var(--line); border-radius: 14px;
+  padding: 13px 14px; margin-bottom: 12px;
+}
+.bd-section-label {
+  font-size: 10px; font-weight: 800; letter-spacing: .2em; text-transform: uppercase;
+  color: var(--accent); margin-bottom: 9px;
+}
+
+/* soundscape picker */
+.bd-sound-row { display: flex; align-items: center; gap: 7px; margin-top: 10px; flex-wrap: wrap; }
+.bd-sound-btn {
+  background: var(--card); border: 1.5px solid var(--line-2); color: var(--ink-soft);
+  border-radius: 999px; padding: 5px 13px; font-size: 12px; font-weight: 700; cursor: pointer;
+  font-family: var(--sans); transition: all .14s;
+}
+.bd-sound-btn:hover { border-color: var(--accent); color: var(--accent); }
+.bd-sound-btn.active { background: var(--grad-teal); border-color: transparent; color: #fff; box-shadow: 0 3px 10px rgba(14,165,164,.3); }
+
+/* focus garden */
+.bd-garden {
+  display: flex; gap: 6px; align-items: flex-end; justify-content: center;
+  background: linear-gradient(180deg, var(--card), var(--card-2));
+  border: 1px solid var(--line); border-radius: 16px; padding: 16px 14px 10px;
+  margin-bottom: 12px; box-shadow: var(--shadow-card);
+}
+.garden-day { display: flex; flex-direction: column; align-items: center; gap: 6px; flex: 1; }
+.garden-plant { font-size: 22px; line-height: 1; min-height: 24px; transition: transform .3s ease; }
+.garden-day.grown .garden-plant { animation: bd-plant-in .5s ease; }
+@keyframes bd-plant-in { from { transform: scale(0) rotate(-20deg); } to { transform: scale(1) rotate(0); } }
+.garden-day span:last-child { font-size: 10px; font-weight: 800; color: var(--dim); letter-spacing: .05em; }
+
+/* insight line — serif italic, calm */
+.bd-insight {
+  font-family: var(--serif); font-style: italic; font-size: 14px; color: var(--ink-soft);
+  margin: 12px 0 4px; line-height: 1.6;
+}
+.bd-insight b { color: var(--accent); font-style: normal; }
+
+/* breathing guide (break) */
+.bd-breathe { display: flex; flex-direction: column; align-items: center; margin-bottom: 10px; }
+.bd-breathe-ring {
+  width: 64px; height: 64px; border-radius: 50%;
+  border: 2px solid rgba(14,165,164,.35);
+  display: grid; place-items: center;
+  animation: bd-breathe-ring 19s ease-in-out infinite;
+}
+.bd-breathe-dot {
+  width: 18px; height: 18px; border-radius: 50%;
+  background: radial-gradient(circle, #34d399, #0ea5a4);
+  box-shadow: 0 0 14px rgba(52,211,153,.6);
+  animation: bd-breathe-dot 19s ease-in-out infinite;
+}
+@keyframes bd-breathe-ring {
+  0%, 100% { transform: scale(1); }        /* hold after out */
+  18% { transform: scale(1.45); }          /* in 4s */
+  45% { transform: scale(1.45); }          /* hold 7s */
+  62% { transform: scale(1); }             /* out 8s */
+}
+@keyframes bd-breathe-dot {
+  0%, 100% { opacity: .55; }
+  18% { opacity: 1; }
+  45% { opacity: 1; }
+  62% { opacity: .55; }
+}
+.bd-breathe-hint { font-size: 11px; color: var(--dim); margin-top: 8px; letter-spacing: .08em; }
+
+/* peaceful celebration */
+.bd-celebrate { position: relative; overflow: hidden; }
+.bd-celebrate-glow {
+  position: absolute; inset: -40% -20% auto; height: 80%;
+  background: radial-gradient(circle at 50% 30%, rgba(255,154,61,.16), rgba(167,139,250,.10) 45%, transparent 70%);
+  animation: bd-glow-pulse 4s ease-in-out infinite; pointer-events: none;
+}
+@keyframes bd-glow-pulse { 0%,100% { opacity: .7; } 50% { opacity: 1; } }
+.bd-celebrate-head { font-size: 22px; }
+.bd-celebrate-reflect {
+  font-family: var(--serif); font-style: italic; font-size: 14.5px;
+  color: var(--ink-soft); margin: 10px auto 4px; max-width: 380px; line-height: 1.65;
+}
+.bd-celebrate-plant { font-size: 12.5px; color: var(--teal); font-weight: 700; margin-top: 4px; }

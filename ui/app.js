@@ -768,7 +768,7 @@ function bdFmt(s) {
 }
 
 /* ---------------- sound: chimes + ambient brown noise ---------------- */
-let ambient = { on: false, ctx: null };
+let ambient = { on: false, kind: "noise", ctx: null };
 function chime(kind) {
   /* music-box style bells: pure sines with a soft exponential decay + a
      quiet upper harmonic for warmth. Each event is a tiny melody. */
@@ -802,33 +802,46 @@ function chime(kind) {
     setTimeout(() => ctx.close(), 1800);
   } catch (e) {}
 }
-function toggleAmbient(on) {
-  const want = on !== undefined ? on : !ambient.on;
-  if (want) {
-    try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const len = ctx.sampleRate * 2;
-      const buf = ctx.createBuffer(1, len, ctx.sampleRate);
-      const d = buf.getChannelData(0);
-      let last = 0;
+function toggleAmbient(kind) {
+  /* soundscape: null = off, "noise" = brown noise, "rain" = soft rain.
+     Generated locally — no streams, no latency. */
+  if (ambient.ctx) {
+    try { ambient.ctx.close(); } catch (e) {}
+    ambient = { on: false, kind: "noise", ctx: null };
+  }
+  if (!kind) { localStorage.setItem("friday.ambient", "0"); return; }
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const len = ctx.sampleRate * 2;
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    let last = 0;
+    if (kind === "rain") {
+      /* pink-ish noise with slow amplitude wobble → soft rainfall */
+      let wob = 0;
+      for (let i = 0; i < len; i++) {
+        const w = Math.random() * 2 - 1;
+        last = (last + 0.028 * w) / 1.028;
+        wob += (Math.random() * 2 - 1) * 0.004;
+        wob *= 0.9995;
+        d[i] = last * 4.2 * (0.75 + 0.25 * Math.sin(i / 2400 + wob * 40));
+      }
+    } else {
       for (let i = 0; i < len; i++) {
         const w = Math.random() * 2 - 1;
         last = (last + 0.02 * w) / 1.02;
         d[i] = last * 3.5;
       }
-      const src = ctx.createBufferSource(); src.buffer = buf; src.loop = true;
-      const f = ctx.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = 900;
-      const g = ctx.createGain(); g.gain.value = 0.22;
-      src.connect(f); f.connect(g); g.connect(ctx.destination);
-      src.start();
-      ambient = { on: true, ctx };
-      localStorage.setItem("friday.ambient", "1");
-    } catch (e) {}
-  } else if (ambient.ctx) {
-    try { ambient.ctx.close(); } catch (e) {}
-    ambient = { on: false, ctx: null };
-    localStorage.setItem("friday.ambient", "0");
-  }
+    }
+    const s = ctx.createBufferSource(); s.buffer = buf; s.loop = true;
+    const f = ctx.createBiquadFilter(); f.type = "lowpass";
+    f.frequency.value = kind === "rain" ? 1600 : 900;
+    const g = ctx.createGain(); g.gain.value = kind === "rain" ? 0.16 : 0.22;
+    s.connect(f); f.connect(g); g.connect(ctx.destination);
+    s.start();
+    ambient = { on: true, kind, ctx };
+    localStorage.setItem("friday.ambient", kind);
+  } catch (e) {}
 }
 
 /* ---------------- confetti (tiny, dependency-free) ---------------- */
@@ -898,6 +911,7 @@ async function finishSession() {
     state.focus.onBreak = false;
     state.focus.lastSummary = r;
     state.focus.celebrating = true;
+    bdSetPhaseClass("celebrate");
     chime("win");
     confetti();
     renderCelebration(r);
@@ -1011,15 +1025,27 @@ function bdCheckMilestones(s) {
   }
 }
 
-/* ---------------- end-of-session celebration ---------------- */
+/* ---------------- end-of-session celebration — peaceful ---------------- */
+function bdReflection(r) {
+  if (r.drifts === 0 && r.comebacks === 0)
+    return "Zero drifts. That's a still, focused mind — rare and precious.";
+  if (r.comebacks > 0 && r.comebacks >= r.drifts)
+    return `${r.drifts} drift${r.drifts === 1 ? "" : "s"}, ${r.comebacks} comeback${r.comebacks === 1 ? "" : "s"} — you return to the work. That's the muscle that matters.`;
+  if (r.drifts > 3)
+    return `${r.drifts} drifts is just today's weather. You stayed in the room — that's the practice.`;
+  return "You showed up, did the thing, and came back to yourself.";
+}
+
 function renderCelebration(r) {
   const host = $("#bd-host");
   if (!host) return;
   const grade = r.focus_score >= 85 ? "FOCUS LEGEND" : r.focus_score >= 70 ? "FOCUS MASTER" : r.focus_score >= 50 ? "SOLID FOCUS" : "YOU SHOWED UP";
   const why = r.why ? ` Your reward: **${esc(r.why)}** 🎁` : "";
+  const reflection = bdReflection(r);
   host.innerHTML = `
     <div class="bd-celebrate card">
-      <div class="bd-celebrate-head">🎉 That's a wrap!</div>
+      <div class="bd-celebrate-glow"></div>
+      <div class="bd-celebrate-head">a quiet moment, well spent</div>
       <div class="bd-score-ring" style="--score:${Math.max(2, r.focus_score)}">
         <div class="bd-score-ring-inner">
           <div class="bd-score-num">${r.focus_score}</div>
@@ -1033,7 +1059,9 @@ function renderCelebration(r) {
         <div class="ov-tile"><div class="v">${r.comebacks}</div><div class="l">comebacks 🧡</div></div>
         <div class="ov-tile"><div class="v">${r.thoughts ? r.thoughts.split("\n").length : 0}</div><div class="l">thoughts saved</div></div>
       </div>
+      <div class="bd-celebrate-reflect">${reflection}</div>
       ${r.task ? `<div class="bd-celebrate-task">🎯 ${esc(r.task)}</div>` : ""}
+      <div class="bd-celebrate-plant">🌱 planted in your garden</div>
       <div class="bd-mood-after">
         <div class="bd-field-hint">How do you feel now?</div>
         <div class="bd-mood-row" id="bd-mood-after">
@@ -1046,9 +1074,8 @@ function renderCelebration(r) {
       <div class="bd-actions" style="margin-top:14px">
         <button id="bd-finish-done" class="btn primary big">Save & see my record</button>
       </div>
-      <div class="bd-tip dim">Score = completion · drifts · comebacks. Even an 40 means you showed up — that's the win.</div>
+      <div class="bd-tip dim">Score = completion · drifts · comebacks. Even a 40 means you showed up — that's the win.</div>
     </div>`;
-  // mood-after picker (single-select)
   $$(".bd-mood-btn", host).forEach(b => b.addEventListener("click", () => {
     $$(".bd-mood-btn", host).forEach(x => x.classList.toggle("active", x === b));
   }));
@@ -1061,7 +1088,7 @@ function renderCelebration(r) {
   });
 }
 
-/* ---------------- idle: rich session intake ---------------- */
+/* ---------------- idle: rich session intake — the ritual ---------------- */
 function bdGreeting() {
   const h = new Date().getHours();
   if (h < 5) return "Up late? Impressive. Let's make it count.";
@@ -1069,6 +1096,30 @@ function bdGreeting() {
   if (h < 17) return "Hey! Perfect time to carve out some focus.";
   if (h < 22) return "Evening session — nice. Let's make it a good one.";
   return "Late-night focus crew. I'm here with you.";
+}
+
+/* 7-day focus garden — every completed session grows your sanctuary */
+function bdGarden(stats) {
+  const days = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(Date.now() - i * 86400000);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    days.push({ key, label: ["S","M","T","W","T","F","S"][d.getDay()], completed: 0 });
+  }
+  const dayCount = {};
+  (stats.sessions || []).forEach(s => {
+    if (s.status === "completed" || s.status === "abandoned") {
+      const d = new Date(s.start_ts * 1000);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      dayCount[key] = (dayCount[key] || 0) + 1;
+    }
+  });
+  return days.map(d => {
+    const n = dayCount[d.key] || 0;
+    const plant = n >= 3 ? "🌳" : n === 2 ? "🌿" : n === 1 ? "🌱" : "·";
+    const today = new Date().toDateString() === new Date(new Date().getTime() - (6 - days.indexOf(d)) * 86400000).toDateString();
+    return `<div class="garden-day ${n ? "grown" : ""}" title="${n} session${n === 1 ? "" : "s"}"><span class="garden-plant">${plant}</span><span>${d.label}</span></div>`;
+  }).join("");
 }
 
 /* typing-safe re-render: never blow away text the user is typing in a
@@ -1100,8 +1151,6 @@ function renderFocusStudio(s, stats) {
     return;
   }
   if (bdTyping() && s) {
-    // user is mid-typing in a studio input — refresh only the log, never
-    // replace the DOM (that would lose their text + caret)
     renderCompanionLog();
     return;
   }
@@ -1118,6 +1167,7 @@ function renderFocusStudio(s, stats) {
     host.innerHTML = `
       <div class="bd-idle">
         <div class="bd-companion idle">
+          <div class="bd-aura"></div>
           <img src="/static/companion.png" class="bd-avatar" alt="Friday"/>
           <div class="bd-companion-name">Friday</div>
           <div class="bd-companion-status">${bdGreeting()}</div>
@@ -1128,51 +1178,64 @@ function renderFocusStudio(s, stats) {
           </div>
         </div>
         <div class="bd-start-card card">
-          <h3>Plan a session you'll enjoy</h3>
-          <input id="bd-task" type="text" placeholder="One task. Just one. (e.g. build the agent UI)" maxlength="120"/>
-          <div class="bd-field-hint dim">✳️ <b>First tiny step</b> — makes starting easy</div>
-          <input id="bd-first" type="text" placeholder="e.g. open the editor and write one function" maxlength="120"/>
-          <div class="bd-field-hint dim">🎁 <b>Reward after</b> — ADHD brains work on rewards</div>
-          <input id="bd-why" type="text" placeholder="e.g. then I watch one episode" maxlength="120"/>
-          <div class="bd-intake-row">
-            <div class="bd-intake-col">
-              <div class="bd-field-hint dim">⚡ Energy now</div>
-              <div class="bd-mood-row" id="bd-energy">
-                ${[["😴",1],["😪",2],["🙂",3],["💪",4],["🚀",5]].map(([e,v]) =>
-                  `<button class="bd-mood-btn" data-val="${v}">${e}</button>`).join("")}
+          <div class="bd-ritual-head">set the scene</div>
+          <div class="bd-section">
+            <div class="bd-section-label">✳️ intent</div>
+            <input id="bd-task" type="text" placeholder="One task. Just one. (e.g. build the agent UI)" maxlength="120"/>
+            <div class="bd-field-hint dim">first tiny step — makes starting easy</div>
+            <input id="bd-first" type="text" placeholder="e.g. open the editor and write one function" maxlength="120"/>
+          </div>
+          <div class="bd-section">
+            <div class="bd-section-label">🎁 care</div>
+            <input id="bd-why" type="text" placeholder="Reward after — e.g. then I watch one episode" maxlength="120"/>
+            <div class="bd-intake-row">
+              <div class="bd-intake-col">
+                <div class="bd-field-hint dim">⚡ energy now</div>
+                <div class="bd-mood-row" id="bd-energy">
+                  ${[["😴",1],["😪",2],["🙂",3],["💪",4],["🚀",5]].map(([e,v]) =>
+                    `<button class="bd-mood-btn" data-val="${v}">${e}</button>`).join("")}
+                </div>
+              </div>
+              <div class="bd-intake-col">
+                <div class="bd-field-hint dim">😊 mood now</div>
+                <div class="bd-mood-row" id="bd-mood">
+                  ${[["😖",1],["😕",2],["😐",3],["🙂",4],["😄",5]].map(([e,v]) =>
+                    `<button class="bd-mood-btn" data-val="${v}">${e}</button>`).join("")}
+                </div>
               </div>
             </div>
-            <div class="bd-intake-col">
-              <div class="bd-field-hint dim">😊 Mood now</div>
-              <div class="bd-mood-row" id="bd-mood">
-                ${[["😖",1],["😕",2],["😐",3],["🙂",4],["😄",5]].map(([e,v]) =>
-                  `<button class="bd-mood-btn" data-val="${v}">${e}</button>`).join("")}
-              </div>
+            <div class="bd-field-hint dim">🧯 distraction pre-commit — decide now, thank yourself later</div>
+            <input id="bd-plan" type="text" placeholder="when I want to check ___, I'll ___ instead" maxlength="140"/>
+          </div>
+          <div class="bd-section">
+            <div class="bd-section-label">🌊 scene</div>
+            <div class="bd-presets">
+              ${[15, 25, 45, 60].map(m => `<button class="bd-preset ${m === 25 ? "active" : ""}" data-min="${m}">${m}m</button>`).join("")}
+              <input id="bd-minutes" type="number" value="25" min="1" max="180" title="custom minutes"/>
+            </div>
+            <div class="bd-opts">
+              <label class="bd-check"><input id="bd-pomo" type="checkbox" ${state.focus.pomo && state.focus.pomo.enabled ? "checked" : ""}/> pomodoro · break</label>
+              <input id="bd-break" type="number" value="${(state.focus.pomo && state.focus.pomo.breakMin) || 5}" min="2" max="20" title="break minutes" style="width:64px"/> <span class="dim">min</span>
+              <label class="bd-check"><input id="bd-gentle" type="checkbox"/> gentle</label>
+            </div>
+            <div class="bd-opts">
+              <input id="bd-allow" type="text" placeholder="allow domains, comma (e.g. github.com)"/>
+              <label class="bd-check"><input id="bd-voice" type="checkbox" checked/> voice nudges</label>
+            </div>
+            <div class="bd-sound-row">
+              <span class="dim" style="font-size:11.5px">soundscape</span>
+              <button id="bd-sound-off" class="bd-sound-btn ${!ambient.on ? "active" : ""}">off</button>
+              <button id="bd-sound-noise" class="bd-sound-btn ${ambient.on && ambient.kind === "noise" ? "active" : ""}">brown noise</button>
+              <button id="bd-sound-rain" class="bd-sound-btn ${ambient.on && ambient.kind === "rain" ? "active" : ""}">rain</button>
             </div>
           </div>
-          <div class="bd-field-hint dim">🧯 <b>Distraction pre-commit</b> — decide now, thank yourself later</div>
-          <input id="bd-plan" type="text" placeholder="when I want to check ___, I'll ___ instead" maxlength="140"/>
-          <div class="bd-presets">
-            ${[15, 25, 45, 60].map(m => `<button class="bd-preset ${m === 25 ? "active" : ""}" data-min="${m}">${m}m</button>`).join("")}
-            <input id="bd-minutes" type="number" value="25" min="1" max="180" title="custom minutes"/>
-          </div>
-          <div class="bd-opts">
-            <label class="bd-check"><input id="bd-pomo" type="checkbox" ${state.focus.pomo && state.focus.pomo.enabled ? "checked" : ""}/> pomodoro · break</label>
-            <input id="bd-break" type="number" value="${(state.focus.pomo && state.focus.pomo.breakMin) || 5}" min="2" max="20" title="break minutes" style="width:64px"/> <span class="dim">min</span>
-            <label class="bd-check"><input id="bd-gentle" type="checkbox"/> gentle</label>
-          </div>
-          <div class="bd-opts">
-            <input id="bd-allow" type="text" placeholder="allow domains, comma (e.g. github.com)"/>
-            <label class="bd-check"><input id="bd-voice" type="checkbox" checked/> voice nudges</label>
-            <label class="bd-check"><input id="bd-ambient" type="checkbox" ${ambient.on ? "checked" : ""}/> brown noise</label>
-          </div>
-          <button id="bd-go" class="btn primary big">▶ Start — I'm here with you</button>
+          <button id="bd-go" class="btn primary big">Begin — I'm here with you</button>
           <button id="bd-just5" class="btn ghost big">⚡ Just start — 5 minutes</button>
         </div>
       </div>
       <div class="bd-record">
-        <h3>Your focus record</h3>
-        <div class="bd-chain">${bdChain(st)}</div>
+        <h3>your sanctuary</h3>
+        <div class="bd-garden">${bdGarden(st)}</div>
         <div class="ov-grid">
           <div class="ov-tile"><div class="v">${f.avg_score || 0}<small>avg</small></div><div class="l">focus score</div></div>
           <div class="ov-tile"><div class="v">${f.best_score || 0}<small>best</small></div><div class="l">best score</div></div>
@@ -1182,11 +1245,7 @@ function renderFocusStudio(s, stats) {
           <div class="ov-tile"><div class="v">${f.total_thoughts || 0}</div><div class="l">thoughts saved</div></div>
         </div>
         ${series.length ? `<div class="bd-score-chart"><div class="dim">last ${series.length} focus scores</div><div class="bd-score-bars">${scoreBars}</div></div>` : ""}
-        <div class="dim" style="margin:10px 0 4px">
-          ${f.best_hour != null ? `⏰ you focus best around <b>${bestHourTxt}</b>` : ""}
-          ${f.energy_delta ? ` · energy ${f.energy_delta > 0 ? "+" : ""}${f.energy_delta} after sessions` : ""}
-          · top distractions: ${(l.top_distraction_domains || []).map(esc).join(", ") || "—"}
-        </div>
+        <div class="bd-insight">${f.best_hour != null ? `you focus best around <b>${bestHourTxt}</b>` : ""}${f.best_hour != null && f.energy_delta ? " · " : ""}${f.energy_delta ? `energy ${f.energy_delta > 0 ? "+" : ""}${f.energy_delta} after sessions` : ""}${(!f.best_hour && !f.energy_delta) ? "your garden is waiting for its first seed" : ""}</div>
         ${sessions.length ? `<h4 style="margin:12px 0 6px">Recent sessions</h4>` + sessions.slice(0, 6).map(x => `
           <div class="hist-row">
             <span class="chip ${x.status}">${esc(x.status)}</span>
@@ -1197,13 +1256,11 @@ function renderFocusStudio(s, stats) {
             ${x.task ? `<span class="dim">· ${esc(x.task)}</span>` : ""}
           </div>`).join("") : ""}
       </div>`;
-    // preset chips
     $$(".bd-preset", host).forEach(b => b.addEventListener("click", () => {
       $$(".bd-preset", host).forEach(x => x.classList.remove("active"));
       b.classList.add("active");
       $("#bd-minutes").value = b.dataset.min;
     }));
-    // single-select energy + mood
     ["bd-energy", "bd-mood"].forEach(id => {
       const wrap = $("#" + id);
       if (!wrap) return;
@@ -1217,12 +1274,16 @@ function renderFocusStudio(s, stats) {
     if (go) go.addEventListener("click", () => startFocus());
     const j5 = $("#bd-just5");
     if (j5) j5.addEventListener("click", () => startFocus({ minutes: 5, justStart: true }));
-    const amb = $("#bd-ambient");
-    if (amb) amb.addEventListener("change", () => toggleAmbient(amb.checked));
-    bdRestoreInputs(snap);   // idle-screen inputs (plan/task/reward) survive re-renders
+    const so = $("#bd-sound-off");
+    if (so) so.addEventListener("click", () => { toggleAmbient(null); renderFocusStudio(null, state.focus.stats); });
+    const sn = $("#bd-sound-noise");
+    if (sn) sn.addEventListener("click", () => { toggleAmbient("noise"); renderFocusStudio(null, state.focus.stats); });
+    const sr = $("#bd-sound-rain");
+    if (sr) sr.addEventListener("click", () => { toggleAmbient("rain"); renderFocusStudio(null, state.focus.stats); });
+    bdRestoreInputs(snap);
     return;
   }
-  /* ---------------- active session ---------------- */
+  /* ---------------- active session — the sanctuary ---------------- */
   const onBreak = s.mode === "break" && state.focus.onBreak;
   const now = Date.now() / 1000;
   const workEnd = s.start_ts + s.target_min * 60;
@@ -1236,6 +1297,7 @@ function renderFocusStudio(s, stats) {
   const drifts = s.drift_count || 0;
   const phase = onBreak ? "break" : bdPhase(s);
   state.focus.phase = phase;
+  bdSetPhaseClass(phase);
   const doms = (stats && stats.recent_drifts || []).filter(d => d.session_id === s.session_id).map(d => d.domain);
   const energy = s.energy ? "⚡".repeat(Math.max(1, Math.min(5, s.energy))) : "";
   const mood = s.mood ? ["😖","😕","😐","🙂","😄"][s.mood - 1] : "";
@@ -1243,12 +1305,14 @@ function renderFocusStudio(s, stats) {
     <div class="bd-active">
       <div class="bd-main">
         <div class="bd-companion active ${onBreak ? "onbreak" : ""}">
+          <div class="bd-aura ${onBreak ? "teal" : ""}"></div>
           <img src="/static/companion.png" class="bd-avatar ${onBreak ? "" : "pulse"}" alt="Friday"/>
           <div class="bd-companion-name">Friday</div>
           <div class="bd-companion-status">${onBreak ? "on break with you ☕" : "working alongside you · in flow"}</div>
           ${state.focus.round > 1 ? `<div class="bd-round">round ${state.focus.round}</div>` : ""}
         </div>
         <div class="bd-timer-card card phase-${phase}">
+          ${onBreak ? `<div class="bd-breathe"><div class="bd-breathe-ring"><div class="bd-breathe-dot"></div></div><div class="bd-breathe-hint">breathe in 4 · hold 7 · out 8</div></div>` : ""}
           <div class="bd-mode-label">${PHASE_LABEL[phase] || "FOCUS"}</div>
           <div class="bd-timer-ring">
             <svg viewBox="0 0 120 120">
@@ -1268,7 +1332,7 @@ function renderFocusStudio(s, stats) {
             </svg>
             <div class="bd-timer-time" id="bd-timer-time">${bdFmt(left)}</div>
           </div>
-          <div class="bd-timer-task">${onBreak ? "stand · water · look far away" : (s.task ? `🎯 ${esc(s.task)}` : "deep work")}</div>
+          <div class="bd-timer-task">${onBreak ? "rest · water · breathe" : (s.task ? `🎯 ${esc(s.task)}` : "deep work")}</div>
           ${!onBreak && s.first_step ? `<div class="bd-first-step dim">first step: ${esc(s.first_step)}</div>` : ""}
           ${!onBreak && s.why ? `<div class="bd-reward dim">🎁 after: ${esc(s.why)}</div>` : ""}
           ${!onBreak && s.distraction_plan ? `<div class="bd-plan dim">🧯 plan: ${esc(s.distraction_plan)}</div>` : ""}
@@ -1277,7 +1341,7 @@ function renderFocusStudio(s, stats) {
             ${onBreak
               ? `<button id="bd-break-next" class="btn primary">▶ Start next round</button><button id="bd-break-end" class="btn ghost">I'm done</button>`
               : `<button id="bd-stop" class="btn danger">🏁 Finish session</button><button id="bd-plus5" class="btn ghost">+5 min</button>`}
-            <button id="bd-ambient-btn" class="btn ghost ${ambient.on ? "ambient-on" : ""}" title="brown noise">${ambient.on ? "🔊 noise" : "🔈 noise"}</button>
+            <button id="bd-sound-cycle" class="btn ghost ${ambient.on ? "ambient-on" : ""}" title="soundscape">${ambient.on ? (ambient.kind === "rain" ? "🌧 rain" : "🔊 noise") : "🔈 sound"}</button>
           </div>
         </div>
       </div>
@@ -1296,7 +1360,7 @@ function renderFocusStudio(s, stats) {
           </div>
         </div>` : ""}
         <div class="card bd-stats-card">
-          <h3>This session</h3>
+          <h3>this session</h3>
           <div class="bd-stat"><span>energy</span><b>${energy || "—"}</b></div>
           <div class="bd-stat"><span>mood</span><b>${mood || "—"}</b></div>
           <div class="bd-stat"><span>drifts</span><b id="bd-drifts">${drifts}</b></div>
@@ -1326,14 +1390,26 @@ function renderFocusStudio(s, stats) {
   if (bnext) bnext.addEventListener("click", () => bdEndBreak(true));
   const bend = $("#bd-break-end");
   if (bend) bend.addEventListener("click", () => bdEndBreak(false));
-  const amb = $("#bd-ambient-btn");
-  if (amb) amb.addEventListener("click", () => { toggleAmbient(); renderFocusStudio(state.focus.active, state.focus.stats); });
+  const snd = $("#bd-sound-cycle");
+  if (snd) snd.addEventListener("click", () => {
+    const next = !ambient.on ? "noise" : ambient.kind === "noise" ? "rain" : null;
+    toggleAmbient(next);
+    renderFocusStudio(state.focus.active, state.focus.stats);
+  });
   const tsave = $("#bd-thought-save");
   if (tsave) tsave.addEventListener("click", () => saveThought());
   const tinput = $("#bd-thought-input");
   if (tinput) tinput.addEventListener("keydown", (e) => { if (e.key === "Enter") saveThought(); });
   renderCompanionLog();
   bdRestoreInputs(snap);
+}
+
+/* phase-tint the aurora behind the whole focus view */
+function bdSetPhaseClass(phase) {
+  const v = $("#view-focus");
+  if (!v) return;
+  v.classList.remove("phase-warmup", "phase-deep", "phase-push", "phase-break");
+  v.classList.add("phase-" + (phase || "deep"));
 }
 
 function renderCompanionLog() {
@@ -1412,6 +1488,7 @@ async function loadFocus() {
   state.focus.active = s;
   state.focus.total = s ? s.target_min : 25;
   state.focus.ends = s ? s.start_ts + s.target_min * 60 : 0;
+  bdSetPhaseClass(s ? (state.focus.phase || "deep") : "");
   if (s && s.session_id !== state.focus.lastSessionId) {
     state.focus.lastSessionId = s.session_id;
     state.focus.lastMilestone = 0;
@@ -1930,7 +2007,9 @@ $("#theme-toggle").addEventListener("click", async () => {
   setInterval(pollOverview, 10000);
   try { const p = JSON.parse(localStorage.getItem("friday.pomo") || ""); if (p && p.enabled !== undefined) state.focus.pomo = p; } catch (e) {}
   state.focus.pomo = state.focus.pomo || { enabled: true, breakMin: 5 };
-  if (localStorage.getItem("friday.ambient") === "1") toggleAmbient(true);
+  const ambKind = localStorage.getItem("friday.ambient");
+  if (ambKind === "1" || ambKind === "noise") toggleAmbient("noise");
+  else if (ambKind === "rain") toggleAmbient("rain");
   // offline-sandbox banner: show when the server has no LLM key configured
   try {
     const ov = await api("/api/admin/overview");
