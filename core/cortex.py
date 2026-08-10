@@ -114,8 +114,21 @@ BANNED_HEADER_RE = re.compile(
     r"the direct answer|the caveat|what i'?d do|what i would do|the common thread|"
     r"here'?s what(?:'?s| is) happening|what this tells us|what the data (?:shows|tells us)|"
     r"the bottom line|in summary|key takeaways|the takeaway|the good news|the bad news|"
-    r"who am i|live search results|what i found|here'?s what i found)"
+    r"who am i|live search results|the live search results|what i actually do|"
+    r"what i can do|what they tell us|what these mean|what i found|here'?s what i found)"
     r"(?:\*\*)?\s*:?\s*\??\s*$", re.I)
+# lines that START with a banned phrase followed by a colon/dash (header style,
+# e.g. "### The Live Search Results — What They Tell Us") get the lead-in
+# stripped; if nothing useful remains the line disappears
+BANNED_HEADER_LEAD_RE = re.compile(
+    r"(?m)^\s*(?:#{1,4}\s*)?(?:\*\*)?"
+    r"(the honest answer|what i can confirm|what i'?d suggest|the short answer|"
+    r"the direct answer|the caveat|what i'?d do|what i would do|the common thread|"
+    r"here'?s what(?:'?s| is) happening|what this tells us|what the data (?:shows|tells us)|"
+    r"the bottom line|in summary|key takeaways|the takeaway|the good news|the bad news|"
+    r"who am i|live search results|the live search results|what i actually do|"
+    r"what i can do|what they tell us|what these mean|what i found|here'?s what i found|"
+    r"based on the live search results)(?:[ \t]*[:\-–—]|[ \t]*$)[ \t]*", re.I)
 # lines that ANNOUNCE the pipeline ("Based on the live search results, ...")
 # get dropped whole — even mid-paragraph, they are exactly the robotic
 # narration the user hates
@@ -130,6 +143,22 @@ HR_RE = re.compile(r"(?m)^\s*(?:-{3,}|\*{3,}|_{3,})\s*$")
 TABLE_BLOCK_RE = re.compile(r"(?m)^((?:\|.*\|\s*\n?)+)")
 
 
+def _drop_dump_tables(t: str) -> str:
+    """Drop tables that dump search results: header cell 'Source' or any cell
+    containing a URL ⇒ clearly a results dump, drop the whole block.
+    Small genuine comparison tables (e.g. 2 phones side by side) survive."""
+    def _drop_dump(m):
+        block = m.group(1)
+        rows = [r.strip() for r in block.strip().splitlines() if "|" in r]
+        if len(rows) >= 2 and ("| ---" in block or "|---|---" in block or "|-" in block):
+            cells = " ".join(rows).lower()
+            if "http" in cells or "source" in cells or "takeaway" in cells \
+               or "date" in cells and len(rows) >= 3:
+                return ""
+        return m.group(0)
+    return TABLE_BLOCK_RE.sub(_drop_dump, t)
+
+
 def polish_reply(reply: str) -> str:
     """Post-generation safety net so the USER never sees the model's slips:
     robotic meta-headers, 'FRIDAY' name openers, --- dividers, and dump-tables
@@ -140,24 +169,14 @@ def polish_reply(reply: str) -> str:
     # leading self-name header ("**FRIDAY**" / "FRIDAY:\n") — never show it
     t = LEADING_NAME_RE.sub("", t, count=1)
     # robotic meta-header lines (case-insensitive, md or bold variants)
+    t = BANNED_HEADER_LEAD_RE.sub("", t)
     t = BANNED_HEADER_RE.sub("", t)
     # pipeline narration sentences ("Based on the live search results, ...")
     t = PIPELINE_NARRATION_RE.sub("", t)
     # horizontal rules — the model uses them to structure essays
     t = HR_RE.sub("", t)
-    # tables that dump search results: header cell "Source" or any cell
-    # containing a URL ⇒ clearly a results dump, drop the whole block.
-    # Small genuine comparison tables (e.g. 2 phones side by side) survive.
-    def _drop_dump(m):
-        block = m.group(1)
-        rows = [r.strip() for r in block.strip().splitlines() if "|" in r]
-        if len(rows) >= 2 and ("| ---" in block or "|---|---" in block or "|-" in block):
-            cells = " ".join(rows).lower()
-            if "http" in cells or "source" in cells or "takeaway" in cells \
-               or "date" in cells and len(rows) >= 3:
-                return ""
-        return m.group(0)
-    t = TABLE_BLOCK_RE.sub(_drop_dump, t)
+    # search-result dump tables
+    t = _drop_dump_tables(t)
     # collapse 3+ blank lines, strip leading/trailing whitespace
     t = re.sub(r"\n{3,}", "\n\n", t)
     t = re.sub(r"[ \t]+\n", "\n", t)
@@ -169,8 +188,10 @@ def polish_history(reply: str) -> str:
     history — stops the model from imitating the old robotic style."""
     if not reply:
         return reply
-    t = BANNED_HEADER_RE.sub("", reply)
+    t = BANNED_HEADER_LEAD_RE.sub("", reply)
+    t = BANNED_HEADER_RE.sub("", t)
     t = HR_RE.sub("", t)
+    t = _drop_dump_tables(t)
     return t.strip()[:1200]
 
 
@@ -394,8 +415,10 @@ class Cortex:
             "'What I'd Do', 'The Common Thread', 'Here's What's Happening', "
             "'The Bottom Line', 'Key Takeaways', 'Based on the Live Search Results'.\n"
             "- NEVER open with your own name ('**FRIDAY**'). Never use '##' / '###' "
-            "headers or '---' dividers in chat. NO markdown tables — write prose, "
-            "short bullets only for real comparisons (3 options max).\n"
+            "headers or '---' dividers in chat — including titles like 'What I "
+            "Actually Do', 'The Live Search Results', 'The Caveat'. NO markdown "
+            "tables — write prose, short bullets only for real comparisons "
+            "(3 options max). Never create a section about search results.\n"
             "- First sentence = the direct answer. Then the useful detail. NEVER "
             "quote raw JSON or tool output.\n"
             "- Never narrate your internal pipeline (pre-fire, searches, 404s). Just "

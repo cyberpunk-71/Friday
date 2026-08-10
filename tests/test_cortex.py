@@ -298,6 +298,17 @@ def test_polish_reply_strips_robotic_furniture():
         "| Result | Source | Date | Takeaway |\n| --- | --- | --- | --- |\n"
         "| WHO study | HT | 08 Aug | risk |\n\nSo movement matters.")
     assert "|" not in out2 and "So movement matters." in out2
+    # imitated section titles ("### The Live Search Results — What They Tell
+    # Us", "### What I Actually Do") get stripped, content stays
+    out3 = polish_reply(
+        "### The Live Search Results — What They Tell Us\n\nThese are news "
+        "items, not a direct answer.\n\n### What I Actually Do\n\n- **Answer**"
+        " — direct replies")
+    assert "Live Search Results" not in out3 and "What I Actually Do" not in out3
+    assert "These are news items" in out3 and "- **Answer**" in out3
+    # colon lead-ins keep the content ("The Honest Answer: X" → "X")
+    assert polish_reply("The Honest Answer: I can't find showtimes.") == \
+        "I can't find showtimes."
     # plain reply untouched
     assert polish_reply("hey, all good here") == "hey, all good here"
 
