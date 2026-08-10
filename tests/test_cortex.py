@@ -543,3 +543,33 @@ def test_polish_strips_mid_reply_ctrl():
     # nested braces + strings with braces inside are handled
     out2 = polish_reply('a {"ctrl":{"config_deltas":{"focus.nudge_cooldown_min":30},"ask":["why {x}?"]}} b')
     assert '"ctrl"' not in out2 and out2.strip() == "a  b"
+
+
+def test_transient_failover_is_silent(cortex, db, monkeypatch):
+    """A TRANSIENT provider failure must fail over SILENTLY — no 'failing
+    over to X' toast. Only a permanent auto-heal (rejected key) may tell the
+    user, and the raw per-turn failover spam is gone entirely."""
+    from core.cortex import Cortex
+    from core.providers import DeepSeekProvider, SimSearch
+    db.set_setting("llm.provider", "gemini")
+    db.exec("INSERT INTO provider_keys(provider,scope,api_key,active,source,created_ts,updated_ts)"
+            " VALUES('deepseek','default','sk-valid1234567890',1,'admin',?,?)", (1, 1))
+
+    class FlakyGemini:
+        name = "gemini"
+        async def stream(self, messages, **kw):
+            raise RuntimeError("gemini network error: ConnectError: timed out")
+            yield  # pragma: no cover
+
+    c = Cortex(db, llm=FlakyGemini(), search=SimSearch())
+
+    async def fake_stream(self, messages, **kw):
+        yield "quietly recovered"
+
+    monkeypatch.setattr(DeepSeekProvider, "stream", fake_stream)
+    events = collect(c.turn("hi"))
+    warns = [e for e in events if e["type"] == "warning"]
+    assert warns == [], "transient failover must not spam warnings"
+    done = next(e for e in events if e["type"] == "done")
+    assert done["model"] == "deepseek"
+    assert db.get_setting("llm.provider") == "gemini"   # routing untouched

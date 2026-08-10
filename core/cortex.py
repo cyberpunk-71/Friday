@@ -689,8 +689,11 @@ class Cortex:
                     continue
                 if fallback is not None and failovers < 3:
                     failovers += 1
-                    yield {"type": "warning",
-                           "message": f"{failed_name} unavailable ({err[:100]}) — failing over to {fallback.name} for this turn."}
+                    # SILENT failover: internal plumbing swap. The user only
+                    # needs to know when the routing is permanently healed —
+                    # per-turn "failing over" toasts are exactly the noise
+                    # that annoyed them. The reason stays in llm.last_error
+                    # (admin overview) for diagnosis.
                     self.llm = fallback
                     stream = self.llm.stream(messages)
                     continue

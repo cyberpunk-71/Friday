@@ -341,6 +341,15 @@ async def models_configure(payload: dict, request: Request, _: bool = Depends(_a
         # voice reads the key live on next TTS call
     # self-heal: if a key ever leaked into a model field, clear it now
     _clear_keylike_models(db)
+    # the user EXPLICITLY saved a fresh key for this provider — reset the
+    # auto-heal anti-flap timer and clear the heal notice, so a heal can fire
+    # immediately if this key is also bad (and the admin notice goes away)
+    if provider in ("deepseek", "gemini") and scope == "default":
+        # explicit fresh key → the old "auto-switched" notice is stale
+        # (saving a key re-routes chat to it), and the anti-flap timer must
+        # reset so a heal can fire immediately if this key is also bad
+        db.set_setting(f"llm.auto_heal_ts.{provider}", None)
+        db.set_setting("llm.auto_heal", None)
     return {"ok": True, "provider": provider, "scope": scope, "masked": f"••••{key[-4:]}"}
 
 
@@ -360,6 +369,10 @@ async def admin_llm_switch(payload: dict, request: Request, _: bool = Depends(_a
     if scope == "chat":
         db.set_setting("llm.provider", provider)
         db.set_setting("llm.model", model or None)
+        # explicit user choice → let a heal fire right away if this provider
+        # is also broken, and drop the stale "auto-switched" admin notice
+        db.set_setting(f"llm.auto_heal_ts.{provider}", None)
+        db.set_setting("llm.auto_heal", None)
     else:
         db.set_setting(f"llm.{scope}.provider", provider)
         db.set_setting(f"llm.{scope}.model", model or None)

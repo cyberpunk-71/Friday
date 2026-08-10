@@ -316,3 +316,24 @@ def test_providers_test_uses_saved_db_key_without_crashing(client, db):
     r2 = client.post("/api/admin/providers/test", json={"provider": "deepseek"})
     assert r2.status_code == 200
     assert "Header value" not in str(r2.json())
+
+
+def test_explicit_apply_resets_auto_heal(client, db):
+    """When the user EXPLICITLY saves/applies a provider, the auto-heal
+    anti-flap timer and the heal notice must reset — a heal can fire again
+    immediately if the new key is also bad."""
+    import json
+    db.set_setting("llm.auto_heal", json.dumps({"from": "gemini", "to": "deepseek", "ts": 1}))
+    db.set_setting("llm.auto_heal_ts.gemini", 9999999999)   # inside the 15-min flap window
+    # user saves a fresh gemini key
+    r = client.post("/api/admin/models/configure",
+                    json={"provider": "gemini", "scope": "default", "api_key": "AIza-fresh-1234567890"})
+    assert r.status_code == 200
+    assert db.get_setting("llm.auto_heal") is None
+    assert db.get_setting("llm.auto_heal_ts.gemini") is None
+    # applying chat routing also resets
+    db.set_setting("llm.auto_heal", json.dumps({"from": "gemini", "to": "deepseek", "ts": 1}))
+    r2 = client.post("/api/admin/llm", json={"scope": "chat", "provider": "gemini", "model": ""})
+    assert r2.status_code == 200
+    assert db.get_setting("llm.auto_heal") is None
+    assert db.get_setting("llm.auto_heal_ts.gemini") is None
