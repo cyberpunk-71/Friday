@@ -241,12 +241,25 @@ def _double_ctrl_marker(buffer: str) -> bool:
 def _cut_double_ctrl(buffer: str) -> str | None:
     """Cut everything up to and including the SECOND ⟨CTRL⟩ marker, then
     strip any ctrl JSON after it. Returns None when the pattern isn't there
-    (so the caller falls back to strip_truncated_ctrl)."""
+    (so the caller falls back to strip_truncated_ctrl). Also handles the
+    shape where a truncated bare-JSON prefix PRECEDES the first marker
+    ('"config_deltas":{},⟨CTRL⟩{"depth":...' — the model restarted the block
+    mid-emission): everything up to the FIRST marker that is followed by
+    another marker is treated as the junk prefix."""
     first = buffer.find(CTRL_MARKER)
     if first < 0:
         return None
     second = buffer.find(CTRL_MARKER, first + len(CTRL_MARKER))
     if second < 0:
+        # one marker only — but if there's a bare-JSON junk prefix before it
+        # ('"config_deltas":{},⟨CTRL⟩{...'), cut the prefix too
+        prefix = buffer[:first]
+        if prefix.lstrip().startswith("{") or re.match(r'^\s*"?(?:depth|tooliness|emotionality|novelty|stakes|config_delt|memory_writ|code_inten|ask)', prefix):
+            rest = buffer[first + len(CTRL_MARKER):]
+            cleaned = strip_truncated_ctrl(rest)
+            if cleaned and cleaned != rest:
+                rest = cleaned
+            return rest.lstrip("\n").lstrip()
         return None
     rest = buffer[second + len(CTRL_MARKER):]
     # if the rest is still a ctrl-JSON prefix, strip it too
@@ -381,11 +394,11 @@ def polish_reply(reply: str) -> str:
         return reply
     t = reply
     # literal ⟨CTRL⟩ marker the model echoes (with or without the JSON blob);
-    # also handles the DOUBLE-emit where the second marker lands mid-JSON
-    if t.count(CTRL_MARKER) >= 2:
-        cut = _cut_double_ctrl(t)
-        if cut is not None:
-            t = cut
+    # also handles the DOUBLE-emit where the second marker lands mid-JSON,
+    # and a bare-JSON junk prefix before a marker ('"config_deltas":{},⟨CTRL⟩{')
+    cut = _cut_double_ctrl(t)
+    if cut is not None:
+        t = cut
     if t.lstrip().startswith(CTRL_MARKER):
         t = t.lstrip()[len(CTRL_MARKER):].lstrip()
     # a COMPLETE ctrl JSON may follow the marker (double-emit) — strip it

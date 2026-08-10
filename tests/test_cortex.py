@@ -697,6 +697,15 @@ def test_ctrl_marker_never_leaks():
     # marker + plain prose → marker gone, prose kept
     t3 = "⟨CTRL⟩Hey! Plain reply"
     assert polish_reply(t3).startswith("Hey!")
+    # bare-JSON junk prefix before a single marker (Gemini restarted the
+    # block mid-emission: '"config_deltas":{},⟨CTRL⟩{"depth": ...}}' + prose)
+    t5 = ('"config_deltas":{},⟨CTRL⟩{"depth": 0.1, "tooliness": 0.0, '
+          '"stakes": 0.0, "config_deltas": {}, "memory_writes": [], '
+          '"code_intent": false, "ask": []}}\n\nHere are the events in '
+          'Ahmedabad tomorrow...')
+    o5 = polish_reply(t5)
+    assert "CTRL" not in o5 and "config_delt" not in o5
+    assert o5.startswith("Here are the events")
     # complete JSON WITHOUT marker (regression — the ',"'-cut must not mangle)
     t4 = '{"ctrl":{"depth":0.1,"config_deltas":{},"memory_writes":[],"ask":[]}}\n\nHi'
     assert polish_reply(t4).startswith("Hi")
