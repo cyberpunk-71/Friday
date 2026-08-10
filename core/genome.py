@@ -120,9 +120,16 @@ class Genome:
 
     def _apply_mutation(self, seed: int) -> None:
         rng = random.Random(int(time.time()) + seed * 7919)
-        choices = [
-            self._mutate_prompt, self._mutate_scorer, self._mutate_nudge, self._mutate_style,
-        ]
+        # only choose mutations whose target actually exists — a randomly
+        # picked no-op (e.g. _mutate_scorer with no scorer.json) made
+        # mutate() return fewer branches than asked and flaked the tests
+        choices = []
+        if (self.dir / "prompts" / "self.md").exists():
+            choices.append(self._mutate_prompt)
+        if (self.dir / "scorer.json").exists():
+            choices.append(self._mutate_scorer)
+        choices.append(self._mutate_nudge)   # always applicable
+        choices.append(self._mutate_style)   # always applicable
         rng.choice(choices)(rng)
 
     def _mutate_prompt(self, rng: random.Random) -> None:
