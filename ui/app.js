@@ -618,47 +618,264 @@ $("#sql-go").addEventListener("click", async () => {
   } catch (e) { $("#sql-out").innerHTML = `<div class="card" style="color:var(--bad)">${esc(e.message)}</div>`; }
 });
 
-/* ============================== focus panel ============================== */
-$("#focus-start").addEventListener("click", async () => {
-  const minutes = +$("#focus-minutes").value || 25;
-  const allow = $("#focus-allow").value.split(",").map(s => s.trim()).filter(Boolean);
-  const r = await api("/api/focus/start", { method: "POST", body: JSON.stringify({ minutes, allow }) });
-  toast(r.ok ? `🎯 Focus ${minutes}m started` : `focus: ${esc(r.error)}`);
-  armNotifications();      // ask for notification permission so drift nudges are visible
+/* ============================== focus panel — BODY DOUBLE ============================== */
+/* Friday works ALONGSIDE you: presence, timer, milestone check-ins, drift
+   reactions, and an end-of-session summary. Body doubling, productized. */
+state.focus.companionLog = [];     // companion lines for the current session
+state.focus.lastMilestone = 0;
+state.focus.lastSessionId = null;  // the session we just ended (for summary)
+state.focus.stats = null;
+
+function bdSay(msg, kind = "") {
+  state.focus.companionLog.push({ msg, kind, ts: Date.now() });
+}
+
+/* companion reaction when a drift is detected — gentle, no judgment */
+function bdOnDrift(domain) {
+  if (!state.focus.active) return;
+  const d = String(domain || "").replace(/^www\./, "").slice(0, 40);
+  bdSay(`You drifted to ${d || "another tab"} — no judgment, come back when you're ready.`, "drift");
+  if (state.view === "focus") {
+    // refresh stats + studio so the drift feed updates
+    api("/api/focus/stats").then(st => { state.focus.stats = st; renderFocusStudio(state.focus.active, st); }).catch(() => {});
+  }
+}
+
+async function startFocus(o = {}) {
+  const minutes = o.minutes || +($("#bd-minutes").value) || 25;
+  const task = (o.task !== undefined ? o.task : $("#bd-task").value || "").trim();
+  const allow = (o.allow || ($("#bd-allow").value || "").split(",").map(s => s.trim()).filter(Boolean));
+  const voice = o.voice !== undefined ? o.voice : $("#bd-voice").checked;
+  const r = await api("/api/focus/start", { method: "POST", body: JSON.stringify({ minutes, allow, voice, task }) });
+  if (r.ok) {
+    state.focus.companionLog = [{ msg: `I'm here with you — ${minutes} min${task ? ` on “${task}”` : ""}. Same room, same timer. Let's work.`, kind: "start", ts: Date.now() }];
+    state.focus.lastMilestone = 0;
+    toast(`🎯 Body-double session started — ${minutes} min`, "good");
+  } else {
+    toast("focus: " + esc(r.error), "bad");
+  }
+  armNotifications();
   loadFocus();
-});
-$("#focus-stop").addEventListener("click", async () => {
-  await api("/api/focus/stop", { method: "POST" });
-  toast("Focus stopped");
+  return r;
+}
+
+async function stopFocus() {
+  const r = await api("/api/focus/stop", { method: "POST" });
+  if (r.ok) toast(r.status === "completed" ? "🎉 Session complete" : "Focus stopped", "chrome");
   loadFocus();
-});
+  return r;
+}
+
+/* milestone check-ins (deterministic, gentle) */
+function bdCheckMilestones(s) {
+  const total = s.target_min * 60;
+  const elapsed = Date.now() / 1000 - s.start_ts;
+  const frac = Math.min(1, elapsed / total);
+  const ms = Math.floor(frac * 4);
+  if (ms > state.focus.lastMilestone) {
+    state.focus.lastMilestone = ms;
+    const lines = {
+      1: "Quarter in — nice. Keep the momentum.",
+      2: "Halfway there! You're doing the thing.",
+      3: "Almost done — one last push.",
+    };
+    if (lines[ms]) {
+      bdSay(lines[ms], "checkin");
+      if ($("#bd-log").getBoundingClientRect) renderFocusStudio(state.focus.active, state.focus.stats);
+    }
+  }
+}
+
+function bdFmt(s) {
+  const m = Math.floor(s / 60), sec = Math.floor(s % 60);
+  return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+}
+
+function renderFocusStudio(s, stats) {
+  const host = $("#bd-host");
+  if (!host) return;
+  if (!s) {
+    const st = stats || {};
+    const l = st.learned || {};
+    const sessions = st.sessions || [];
+    host.innerHTML = `
+      <div class="bd-idle">
+        <div class="bd-companion idle">
+          <img src="/static/companion.png" class="bd-avatar" alt="Friday"/>
+          <div class="bd-companion-name">Friday</div>
+          <div class="bd-companion-status">Ready when you are — I'll work alongside you.</div>
+        </div>
+        <div class="bd-start-card card">
+          <h3>What are we working on?</h3>
+          <input id="bd-task" type="text" placeholder="e.g. build the agent UI — write 3 functions" maxlength="120"/>
+          <div class="bd-presets">
+            ${[15, 25, 45, 60].map(m => `<button class="bd-preset ${m === 25 ? "active" : ""}" data-min="${m}">${m}m</button>`).join("")}
+            <input id="bd-minutes" type="number" value="25" min="1" max="180" title="custom minutes"/>
+          </div>
+          <div class="bd-opts">
+            <input id="bd-allow" type="text" placeholder="allow domains, comma (e.g. github.com)"/>
+            <label class="bd-check"><input id="bd-voice" type="checkbox" checked/> voice nudges</label>
+          </div>
+          <button id="bd-go" class="btn primary big">▶ Start — I'm here with you</button>
+          <div class="bd-tip dim">Tip: body doubling works best when you state your task out loud. Tell me and we begin.</div>
+        </div>
+      </div>
+      <div class="bd-record">
+        <h3>Your focus record</h3>
+        <div class="ov-grid">
+          <div class="ov-tile"><div class="v">${st.week ? st.week.minutes : 0}<small>m</small></div><div class="l">this week · ${st.week ? st.week.count : 0} sessions</div></div>
+          <div class="ov-tile"><div class="v">${st.streak_days || 0}<small>d</small></div><div class="l">day streak</div></div>
+          <div class="ov-tile"><div class="v">${st.best_day_min || 0}<small>m</small></div><div class="l">best day</div></div>
+          <div class="ov-tile"><div class="v">${st.avg_min || 0}<small>m</small></div><div class="l">avg session</div></div>
+          <div class="ov-tile"><div class="v">${st.total_completed || 0}</div><div class="l">completed</div></div>
+          <div class="ov-tile"><div class="v">${st.total_drifts || 0}</div><div class="l">drifts tracked</div></div>
+        </div>
+        <div class="dim" style="margin:10px 0 4px">peak drift hours: ${(l.peak_hours || []).map(h => `${h}:00`).join(", ") || "—"} · top distractions: ${(l.top_distraction_domains || []).map(esc).join(", ") || "—"}</div>
+        ${sessions.length ? `<h4 style="margin:12px 0 6px">Recent sessions</h4>` + sessions.slice(0, 8).map(x => `
+          <div class="hist-row">
+            <span class="chip ${x.status}">${esc(x.status)}</span>
+            <span>${fmtDate(x.start_ts)}</span>
+            <span><b>${Math.round(((x.end_ts || Date.now() / 1000) - x.start_ts) / 60)}</b>/${x.target_min}m</span>
+            <span class="dim">drifts ${x.drift_count}</span>
+            ${x.task ? `<span class="dim">· ${esc(x.task)}</span>` : ""}
+          </div>`).join("") : ""}
+      </div>`;
+    // preset chips
+    $$(".bd-preset", host).forEach(b => b.addEventListener("click", () => {
+      $$(".bd-preset", host).forEach(x => x.classList.remove("active"));
+      b.classList.add("active");
+      $("#bd-minutes").value = b.dataset.min;
+    }));
+    const go = $("#bd-go");
+    if (go) go.addEventListener("click", () => startFocus());
+    return;
+  }
+  /* ---------------- active session ---------------- */
+  const left = Math.max(0, (s.start_ts + s.target_min * 60) - Date.now() / 1000);
+  const pct = Math.max(0, Math.min(1, 1 - left / (s.target_min * 60)));
+  const el = Math.floor((Date.now() / 1000 - s.start_ts) / 60);
+  const drifts = s.drift_count || 0;
+  const doms = (stats && stats.recent_drifts || []).filter(d => d.session_id === s.session_id).map(d => d.domain);
+  host.innerHTML = `
+    <div class="bd-active">
+      <div class="bd-main">
+        <div class="bd-companion active">
+          <img src="/static/companion.png" class="bd-avatar pulse" alt="Friday"/>
+          <div class="bd-companion-name">Friday</div>
+          <div class="bd-companion-status">working alongside you · in flow</div>
+        </div>
+        <div class="bd-timer-card card">
+          <div class="bd-timer-ring">
+            <svg viewBox="0 0 120 120">
+              <defs><linearGradient id="bdGrad" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#ff7849"/><stop offset="100%" stop-color="#ff5e3a"/>
+              </linearGradient></defs>
+              <circle class="bd-ring-bg" cx="60" cy="60" r="52"/>
+              <circle class="bd-ring-fg" id="bd-ring-fg" cx="60" cy="60" r="52"/>
+            </svg>
+            <div class="bd-timer-time" id="bd-timer-time">${bdFmt(left)}</div>
+          </div>
+          <div class="bd-timer-task">${s.task ? `🎯 ${esc(s.task)}` : "deep work"}</div>
+          <div class="bd-timer-sub dim">${el}m elapsed · ${Math.round(pct * 100)}% done</div>
+          <div class="bd-actions">
+            <button id="bd-stop" class="btn danger">■ End session</button>
+            <button id="bd-plus5" class="btn ghost">+5 min</button>
+          </div>
+        </div>
+      </div>
+      <div class="bd-side">
+        <div class="card bd-log-card">
+          <h3>Friday's log</h3>
+          <div id="bd-log" class="bd-log"></div>
+        </div>
+        <div class="card bd-stats-card">
+          <h3>This session</h3>
+          <div class="bd-stat"><span>drifts</span><b id="bd-drifts">${drifts}</b></div>
+          <div class="bd-stat"><span>elapsed</span><b>${el}m</b></div>
+          <div class="bd-stat"><span>target</span><b>${s.target_min}m</b></div>
+          ${doms.length ? `<div class="bd-doms dim">drifted to: ${doms.slice(0, 4).map(esc).join(", ")}</div>` : `<div class="bd-doms dim">no drifts yet — locked in 🔒</div>`}
+        </div>
+      </div>
+    </div>`;
+  const ring = $("#bd-ring-fg");
+  if (ring) ring.style.strokeDashoffset = (326.7 * (1 - pct)).toFixed(1);
+  const stop = $("#bd-stop");
+  if (stop) stop.addEventListener("click", () => stopFocus());
+  const plus = $("#bd-plus5");
+  if (plus) plus.addEventListener("click", async () => {
+    // extend: stop old + start new with remaining + 5 (keeps stats honest)
+    await api("/api/focus/stop", { method: "POST" });
+    const mins = Math.max(1, Math.round(left / 60) + 5);
+    await startFocus({ minutes: mins, task: s.task, allow: JSON.parse(s.allow_domains || "[]"), voice: true });
+    bdSay("I added 5 minutes — we're in this together.");
+  });
+  renderCompanionLog();
+}
+
+function renderCompanionLog() {
+  const log = $("#bd-log");
+  if (!log) return;
+  log.innerHTML = state.focus.companionLog.map(l => `
+    <div class="bd-line ${l.kind}">
+      <img src="/static/companion.png" class="bd-log-avatar" alt=""/>
+      <span>${esc(l.msg)}</span>
+      <span class="dim bd-log-ts">${new Date(l.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+    </div>`).join("") || `<div class="dim">I'm here.</div>`;
+  log.scrollTop = log.scrollHeight;
+}
+
+function renderFocusWidget(s) {
+  const idle = $("#focus-widget-idle"), act = $("#focus-widget-active");
+  if (!idle || !act) return;
+  if (s) {
+    idle.classList.add("hidden"); act.classList.remove("hidden");
+    const left = Math.max(0, (s.start_ts + s.target_min * 60) - Date.now() / 1000);
+    const t = $("#bd-mini-time"); if (t) t.textContent = bdFmt(left);
+    const task = $("#bd-mini-task"); if (task) task.textContent = s.task ? s.task : "deep work";
+    const d = $("#focus-drifts"); if (d) d.textContent = `drifts: ${s.drift_count || 0}`;
+    const w = $("#focus-widget"); if (w) w.classList.remove("hidden");
+  } else {
+    idle.classList.remove("hidden"); act.classList.add("hidden");
+  }
+}
+
 async function loadFocus() {
   const [active, stats] = await Promise.all([api("/api/focus/active"), api("/api/focus/stats")]);
   const s = active.session;
-  if (s) {
-    state.focus.active = s; state.focus.total = s.target_min;
-    state.focus.ends = s.start_ts + s.target_min * 60;
-    $("#focus-start").classList.add("hidden");
-    $("#focus-stop").classList.remove("hidden");
-    $("#focus-live").innerHTML = `<div class="dim"><b>session #${s.session_id}</b>${s.task ? ` · 🎯 ${esc(s.task)}` : ""} · ${s.target_min} min · allow: ${esc(JSON.parse(s.allow_domains || "[]").join(", ") || "none")} · drifts: ${s.drift_count}</div>
-      <div class="dim" style="margin-top:6px">📡 Drift sensor: this tab is tracked (tab-switch = drift). For full browser tracking install the extension: <a href="/api/extension/zip" download style="color:var(--accent)">friday-sensor.zip</a> → chrome://extensions → Load unpacked.</div>`;
-  } else {
-    state.focus.active = null;
-    $("#focus-start").classList.remove("hidden");
-    $("#focus-stop").classList.add("hidden");
-    $("#focus-live").innerHTML = `<div class="dim">no active session</div>`;
+  state.focus.stats = stats;
+  // detect session end (worker completes / user stopped elsewhere)
+  if (state.focus.active && !s) {
+    const ended = state.focus.active;
+    state.focus.lastSessionId = ended.session_id;
+    const mins = Math.max(0, Math.round((Date.now() / 1000 - ended.start_ts) / 60));
+    const dr = ended.drift_count || 0;
+    const wrap = mins >= (ended.target_min || 25) * 0.8;
+    bdSay(wrap
+      ? `That's a wrap 🎉 — ${mins} min focused${ended.task ? ` on “${ended.task}”` : ""}, ${dr} drift${dr === 1 ? "" : "s"}. You showed up. Want a 5-min break?`
+      : `Session ended after ${mins} min${ended.task ? ` on “${ended.task}”` : ""}. Good work — we'll get it next time.`, "end");
+    if (state.view === "focus") {
+      toast(wrap ? "🎉 Session complete — nice work" : "Focus session ended", wrap ? "good" : "chrome");
+    }
   }
-  const l = stats.learned || {};
-  $("#focus-learned").innerHTML = `
-    <div class="dim">peak drift hours: ${(l.peak_hours || []).map(h => `${h}:00`).join(", ") || "—"}</div>
-    <div class="dim" style="margin-top:6px">top distraction domains: ${(l.top_distraction_domains || []).map(esc).join(", ") || "—"}</div>
-    <div class="dim" style="margin-top:6px">total drifts tracked: ${stats.total_drifts || 0}</div>`;
-  $("#focus-history").innerHTML = (stats.sessions || []).map(s => `
-    <div class="hist-row"><span>#${s.session_id} · ${fmtDate(s.start_ts)}</span>
-      <span class="task-status ${esc(s.status)}">${esc(s.status)}</span>
-      <span>${Math.round((s.end_ts || Date.now() / 1000 - s.start_ts) / 60)}/${s.target_min}m</span>
-      <span>drifts ${s.drift_count}</span></div>`).join("") || `<div class="dim">no sessions yet</div>`;
+  state.focus.active = s;
+  state.focus.total = s ? s.target_min : 25;
+  state.focus.ends = s ? s.start_ts + s.target_min * 60 : 0;
+  if (s && s.session_id !== state.focus.lastSessionId) {
+    // fresh session (just started here or in chat) → seed the companion log
+    if (!state.focus.companionLog.length || state.focus.companionLog[0].kind !== "start") {
+      state.focus.companionLog = [{ msg: `I'm here with you — ${s.target_min} min${s.task ? ` on “${s.task}”` : ""}. Same room, same timer. Let's work.`, kind: "start", ts: Date.now() }];
+      state.focus.lastMilestone = 0;
+    }
+  }
+  if (s) bdCheckMilestones(s);
+  renderFocusStudio(s, stats);
+  renderFocusWidget(s);
 }
+
+/* sidebar + header quick entry points */
+$("#side-focus-quick")?.addEventListener("click", () => { switchView("focus"); });
+$("#header-focus-btn")?.addEventListener("click", () => { switchView("focus"); });
+$("#focus-refresh")?.addEventListener("click", () => loadFocus());
 
 /* ============================== books panel ============================== */
 $("#book-file").addEventListener("change", async (e) => {
@@ -936,6 +1153,7 @@ function reportDrift() {
           if (n.channel === "voice") speakNudge(n.message);
         }
         beep();
+        bdOnDrift(location.hostname || location.href);
       }
     })
     .catch(() => {});
@@ -1002,17 +1220,25 @@ async function pollOverview() {
 }
 function pollFocus() {
   const s = state.focus.active;
-  const w = $("#focus-widget");
   if (s) {
-    w.classList.remove("hidden");
     const left = Math.max(0, state.focus.ends - Date.now() / 1000);
     const pct = Math.max(0, Math.min(1, 1 - left / (state.focus.total * 60)));
-    $("#focus-ring-fg").style.strokeDashoffset = (163.4 * (1 - pct)).toFixed(1);
-    const m = Math.floor(left / 60), sec = Math.floor(left % 60);
-    $("#focus-time").textContent = `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
-    $("#focus-drifts").textContent = `drifts: ${s.drift_count}${s.task ? ` · ${s.task}` : ""}`;
+    const ring = $("#focus-ring-fg");
+    if (ring) ring.style.strokeDashoffset = (163.4 * (1 - pct)).toFixed(1);
+    const t = $("#focus-time"); if (t) t.textContent = bdFmt(left);
+    const d = $("#focus-drifts"); if (d) d.textContent = `drifts: ${s.drift_count}${s.task ? ` · ${s.task}` : ""}`;
+    const mt = $("#bd-mini-time"); if (mt) mt.textContent = bdFmt(left);
+    const big = $("#bd-timer-time");
+    if (big) {
+      big.textContent = bdFmt(left);
+      const ring2 = $("#bd-ring-fg");
+      if (ring2) ring2.style.strokeDashoffset = (326.7 * (1 - pct)).toFixed(1);
+    }
+    // milestone check-ins while active
+    bdCheckMilestones(s);
   } else {
-    w.classList.add("hidden");
+    const hm = $("#header-focus-mini");
+    if (hm) hm.classList.add("hidden");
   }
 }
 /* nudge SSE stream → toasts */
@@ -1033,6 +1259,7 @@ async function nudgeStream() {
             toast(esc(ev.nudge.message), ev.nudge.channel);
             notifyChrome("🎯 Friday — focus", ev.nudge.message);
             if (ev.nudge.channel === "voice" || ev.nudge.kind === "focus") { const u = new SpeechSynthesisUtterance(ev.nudge.message); u.lang = "en-IN"; speechSynthesis.speak(u); }
+            if (ev.nudge.kind === "focus") bdOnDrift((ev.nudge.url) || (ev.nudge.message.match(/https?:\/\/([^\s/]+)/) || [])[1] || "somewhere");
           }
         } catch (e) {}
       }
@@ -1073,9 +1300,14 @@ $("#theme-toggle").addEventListener("click", async () => {
   setInterval(async () => {           // keep focus state fresh for the sensor
     try {
       const a = await api("/api/focus/active");
-      if (a.session) { state.focus.active = a.session; state.focus.total = a.session.target_min;
-                       state.focus.ends = a.session.start_ts + a.session.target_min * 60; }
-      else state.focus.active = null;
+      const was = state.focus.active;
+      const now = a.session;
+      const changed = (was && !now) || (!was && now) || (was && now && (was.session_id !== now.session_id || was.drift_count !== now.drift_count));
+      state.focus.active = now;
+      state.focus.total = now ? now.target_min : 25;
+      state.focus.ends = now ? now.start_ts + now.target_min * 60 : 0;
+      if (changed) loadFocus();          // full re-render on state change
+      else renderFocusWidget(now);       // lightweight time refresh otherwise
     } catch (e) {}
   }, 3000);
   setInterval(pollFocus, 1000);

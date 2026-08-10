@@ -4,7 +4,7 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Friday–Δ</title>
-<link rel="stylesheet" href="/static/style.css?v=3.0.0"/>
+<link rel="stylesheet" href="/static/style.css?v=3.1.0"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%23ff7849'/><stop offset='1' stop-color='%23ff5e3a'/></linearGradient></defs><rect x='8' y='8' width='84' height='84' rx='22' fill='url(%23g)'/><text x='50' y='68' font-size='52' text-anchor='middle' fill='white' font-family='Georgia,serif'>Δ</text></svg>"/>
 </head>
 <body>
@@ -30,14 +30,32 @@
     </nav>
 
     <div class="side-widgets">
-      <div id="focus-widget" class="widget hidden">
-        <div class="widget-title">FOCUS SESSION</div>
-        <div id="focus-ring"><svg viewBox="0 0 60 60">
-          <defs><linearGradient id="gradRing" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stop-color="#0ea5a4"/><stop offset="100%" stop-color="#34d399"/>
-          </linearGradient></defs>
-          <circle class="ring-bg" cx="30" cy="30" r="26"/><circle class="ring-fg" id="focus-ring-fg" cx="30" cy="30" r="26"/></svg><span id="focus-time">25:00</span></div>
-        <div id="focus-drifts">drifts: 0</div>
+      <div id="focus-widget" class="widget">
+        <div class="widget-title">FOCUS · BODY DOUBLE</div>
+        <div id="focus-widget-idle">
+          <div class="bd-mini-row">
+            <img src="/static/companion.png" class="bd-mini-avatar" alt="Friday"/>
+            <div class="bd-mini-text">
+              <div class="bd-mini-line">I'll work alongside you.</div>
+              <button id="side-focus-quick" class="mini-btn primary">▶ Start focus</button>
+            </div>
+          </div>
+        </div>
+        <div id="focus-widget-active" class="hidden">
+          <div class="bd-mini-row">
+            <img src="/static/companion.png" class="bd-mini-avatar pulse" alt="Friday"/>
+            <div class="bd-mini-text">
+              <div class="bd-mini-line" id="bd-mini-time">25:00</div>
+              <div class="bd-mini-task" id="bd-mini-task">on task…</div>
+            </div>
+          </div>
+          <div id="focus-ring" class="hidden"><svg viewBox="0 0 60 60">
+            <defs><linearGradient id="gradRing" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#0ea5a4"/><stop offset="100%" stop-color="#34d399"/>
+            </linearGradient></defs>
+            <circle class="ring-bg" cx="30" cy="30" r="26"/><circle class="ring-fg" id="focus-ring-fg" cx="30" cy="30" r="26"/></svg><span id="focus-time">25:00</span></div>
+          <div id="focus-drifts">drifts: 0</div>
+        </div>
       </div>
 
       <div class="widget">
@@ -52,7 +70,7 @@
         <div id="sys-status" class="dim">loading…</div>
         <div class="sys-row">
           <button id="theme-toggle" class="mini-btn" title="Toggle light/dark">◐ Theme</button>
-          <div id="ui-version" class="dim">UI v3.0 · core 0.1.0</div>
+          <div id="ui-version" class="dim">UI v3.1 · core 0.1.0</div>
         </div>
       </div>
     </div>
@@ -64,6 +82,7 @@
       <div id="chat-header">
         <div id="chat-title">Friday<small>Δ</small></div>
         <div id="status-pill"><span class="live-dot"></span><span id="status-text">live</span></div>
+        <button id="header-focus-btn" class="header-focus" title="Start a body-double focus session">🎯<span id="header-focus-mini" class="hidden"></span></button>
         <div id="chat-meta" class="dim"></div>
       </div>
       <div id="chat-scroll">
@@ -136,27 +155,12 @@
 
     <!-- ============ FOCUS ============ -->
     <section id="view-focus" class="view">
-      <div class="panel-head"><h2>Focus</h2></div>
-      <div class="focus-grid">
-        <div class="card">
-          <h3>Session</h3>
-          <div id="focus-session-controls">
-            <input id="focus-minutes" type="number" value="25" min="1" max="180"/> min
-            <input id="focus-allow" placeholder="allow domains (comma)"/><br/>
-            <button id="focus-start" class="btn primary">▶ Start</button>
-            <button id="focus-stop" class="btn danger hidden">■ Stop</button>
-          </div>
-          <div id="focus-live" class="dim"></div>
-        </div>
-        <div class="card">
-          <h3>Learned patterns</h3>
-          <div id="focus-learned"></div>
-        </div>
-        <div class="card wide">
-          <h3>Session history</h3>
-          <div id="focus-history"></div>
+      <div class="panel-head"><h2>Focus Studio</h2>
+        <div class="panel-actions">
+          <button id="focus-refresh" class="btn ghost">⟳ refresh</button>
         </div>
       </div>
+      <div id="bd-host" class="bd-scroll"></div>
     </section>
 
     <!-- ============ BOOKS ============ -->
@@ -257,6 +261,6 @@
 <div id="toast-stack"></div>
 <div id="chrome-modal" class="hidden"><div id="chrome-modal-box"></div></div>
 
-<script src="/static/app.js?v=3.0.0"></script>
+<script src="/static/app.js?v=3.1.0"></script>
 </body>
 </html>

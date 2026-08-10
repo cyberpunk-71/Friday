@@ -558,7 +558,9 @@ async def memory_graph(limit: int = 200):
 @app.post("/api/focus/start")
 async def focus_start(payload: dict):
     return Focus(get_db()).start(payload.get("minutes", 25),
-                                 payload.get("allow", []), payload.get("voice", True))
+                                 payload.get("allow", []),
+                                 payload.get("voice", True),
+                                 payload.get("task") or None)
 
 
 @app.post("/api/focus/stop")

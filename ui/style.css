@@ -468,3 +468,122 @@ table.data th { background: var(--card-2); font-size: 10px; text-transform: uppe
   .cards { grid-template-columns: 1fr; padding: 4px 14px 16px; }
   .panel-head { padding: 16px 14px 10px; }
 }
+
+/* ============================================================
+   FOCUS STUDIO — BODY DOUBLE
+   ============================================================ */
+.bd-scroll { flex: 1; overflow-y: auto; padding: 6px 26px 30px; }
+.bd-idle { display: grid; grid-template-columns: 320px 1fr; gap: 22px; align-items: start; max-width: 980px; margin: 0 auto; }
+.bd-active { display: grid; grid-template-columns: 1fr 340px; gap: 22px; align-items: start; max-width: 980px; margin: 0 auto; }
+
+/* companion presence card */
+.bd-companion {
+  background: var(--card); border: 1px solid var(--line); border-radius: 22px;
+  padding: 26px 20px; text-align: center; box-shadow: var(--shadow-card);
+  position: sticky; top: 8px;
+}
+.bd-companion.active { border-color: rgba(255, 94, 58, .35); box-shadow: 0 0 0 4px rgba(255, 94, 58, .08), var(--shadow-card); }
+.bd-avatar {
+  width: 108px; height: 108px; border-radius: 50%;
+  box-shadow: 0 8px 24px rgba(255, 94, 58, .28);
+  display: block; margin: 0 auto;
+}
+.bd-avatar.pulse { animation: bd-breathe 2.6s ease-in-out infinite; }
+@keyframes bd-breathe {
+  0%, 100% { transform: scale(1); box-shadow: 0 8px 24px rgba(255,94,58,.25); }
+  50% { transform: scale(1.045); box-shadow: 0 10px 30px rgba(255,94,58,.4); }
+}
+.bd-companion-name { font-family: var(--serif); font-size: 19px; font-weight: 700; margin-top: 12px; }
+.bd-companion-status { font-size: 12.5px; color: var(--dim); margin-top: 5px; line-height: 1.5; }
+
+/* idle start card */
+.bd-start-card { padding: 24px 26px; }
+.bd-start-card input[type="text"], .bd-start-card input[type="number"] { width: 100%; margin: 10px 0 4px; }
+.bd-presets { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 12px 0 6px; }
+.bd-preset {
+  background: var(--card-2); border: 1.5px solid var(--line-2); color: var(--ink-soft);
+  border-radius: 999px; padding: 7px 16px; font-size: 13px; font-weight: 800;
+  cursor: pointer; font-family: var(--sans); transition: all .14s;
+}
+.bd-preset:hover { border-color: var(--accent); color: var(--accent); }
+.bd-preset.active { background: var(--grad); border-color: transparent; color: #fff; box-shadow: 0 4px 12px rgba(255,94,58,.3); }
+.bd-presets input { width: 74px !important; min-width: 74px; margin: 0; }
+.bd-opts { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 10px 0 16px; }
+.bd-opts input[type="text"] { flex: 1; min-width: 200px; margin: 0; }
+.bd-check { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ink-soft); font-weight: 600; cursor: pointer; white-space: nowrap; }
+.bd-check input { accent-color: var(--accent); width: 15px; height: 15px; }
+.btn.big { width: 100%; padding: 13px 16px; font-size: 14.5px; border-radius: 14px; }
+.bd-tip { margin-top: 12px; font-size: 11.5px; line-height: 1.55; }
+
+/* active timer */
+.bd-timer-card { text-align: center; padding: 26px 20px; }
+.bd-timer-ring { position: relative; width: 180px; height: 180px; margin: 6px auto 12px; }
+.bd-timer-ring svg { width: 180px; height: 180px; transform: rotate(-90deg); }
+.bd-ring-bg { fill: none; stroke: var(--line); stroke-width: 9; }
+.bd-ring-fg { fill: none; stroke: url(#bdGrad); stroke-width: 9; stroke-linecap: round; stroke-dasharray: 326.7; stroke-dashoffset: 326.7; transition: stroke-dashoffset .6s linear; }
+.bd-timer-time {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  font-family: var(--serif); font-size: 40px; font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.bd-timer-task { font-size: 15px; font-weight: 700; }
+.bd-timer-sub { margin-top: 4px; }
+.bd-actions { display: flex; gap: 8px; justify-content: center; margin-top: 16px; }
+
+/* companion log */
+.bd-log-card { }
+.bd-log { max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 2px; }
+.bd-line {
+  display: flex; gap: 9px; align-items: flex-start;
+  background: var(--card-2); border: 1px solid var(--line); border-radius: 13px;
+  padding: 9px 12px; font-size: 12.8px; line-height: 1.45;
+}
+.bd-line.drift { border-left: 3px solid var(--warn); }
+.bd-line.checkin { border-left: 3px solid var(--teal); }
+.bd-line.end { border-left: 3px solid var(--good); }
+.bd-line.start { border-left: 3px solid var(--accent); }
+.bd-log-avatar { width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0; margin-top: 1px; }
+.bd-log-ts { margin-left: auto; flex-shrink: 0; font-size: 10px; align-self: center; }
+
+/* this-session stats */
+.bd-stats-card { }
+.bd-stat { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px dashed var(--line); font-size: 13px; }
+.bd-stat:last-of-type { border-bottom: none; }
+.bd-stat b { font-family: var(--serif); font-size: 16px; }
+.bd-doms { margin-top: 9px; font-size: 11.5px; line-height: 1.5; }
+
+/* focus record */
+.bd-record { max-width: 980px; margin: 26px auto 0; }
+.bd-record h3 { font-family: var(--serif); font-size: 17px; margin-bottom: 10px; }
+.bd-record h4 { font-family: var(--serif); font-size: 14.5px; }
+.ov-tile .v small { font-size: 12px; color: var(--dim); font-weight: 600; }
+
+/* sidebar mini presence */
+.bd-mini-row { display: flex; gap: 10px; align-items: center; }
+.bd-mini-avatar { width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0; box-shadow: 0 3px 10px rgba(255,94,58,.25); }
+.bd-mini-avatar.pulse { animation: bd-breathe 2.6s ease-in-out infinite; }
+.bd-mini-text { flex: 1; min-width: 0; }
+.bd-mini-line { font-size: 12.5px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.bd-mini-task {
+  font-size: 10.5px; color: var(--dim); margin-top: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+#side-focus-quick { width: 100%; margin-top: 8px; }
+
+/* chat header focus button */
+.header-focus {
+  background: var(--card); border: 1px solid var(--line-2); color: var(--ink);
+  border-radius: 999px; padding: 5px 12px; font-size: 13px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px;
+  transition: all .15s; font-family: var(--sans);
+}
+.header-focus:hover { border-color: var(--accent); box-shadow: 0 2px 10px rgba(255,94,58,.18); }
+#header-focus-mini {
+  font-size: 10.5px; font-weight: 800; background: var(--grad); color: #fff;
+  border-radius: 999px; padding: 1px 7px; font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 900px) {
+  .bd-idle, .bd-active { grid-template-columns: 1fr; }
+  .bd-companion { position: static; }
+}

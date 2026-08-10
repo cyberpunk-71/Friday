@@ -110,7 +110,7 @@ class Focus:
         return plan
 
     def stats(self) -> dict:
-        sessions = self.db.q("SELECT * FROM focus_sessions ORDER BY start_ts DESC LIMIT 20")
+        sessions = self.db.q("SELECT * FROM focus_sessions ORDER BY start_ts DESC LIMIT 30")
         today = time.strftime("%Y-%m-%d")
         today_sessions = [s for s in sessions if time.strftime("%Y-%m-%d", time.localtime(s["start_ts"])) == today]
         # learned patterns: hour-of-day drift frequencies
@@ -121,8 +121,41 @@ class Focus:
         for d in drifts:
             h = time.localtime(d["ts"]).tm_hour
             by_hour[h] = by_hour.get(h, 0) + 1
-            dom = urlparse(d["url"]).netloc
+            dom = urlparse(d["url"]).netloc or d["url"][:40]
             domains[dom] = domains.get(dom, 0) + 1
+        # recent drifts for the companion feed (with domain)
+        recent = []
+        for d in drifts[:10]:
+            dom = urlparse(d["url"]).netloc or d["url"][:40]
+            recent.append({"ts": d["ts"], "url": d["url"][:160], "domain": dom,
+                           "session_id": d["session_id"]})
+        # week stats (Monday start)
+        now = time.localtime()
+        mon = time.mktime((now.tm_year, now.tm_mon, now.tm_mday - now.tm_wday, 0, 0, 0, 0, 0, -1))
+        week_sessions = [s for s in sessions
+                         if s["start_ts"] >= mon and s["status"] in ("completed", "abandoned")]
+        week_min = sum(max(0, int(((s["end_ts"] or time.time()) - s["start_ts"]) / 60)) for s in week_sessions)
+        # day streak: consecutive days (ending today or yesterday) with a session
+        done_days = sorted({time.strftime("%Y-%m-%d", time.localtime(s["start_ts"]))
+                            for s in sessions if s["status"] in ("completed", "abandoned")})
+        streak = 0
+        import datetime
+        cursor = datetime.date.today()
+        if done_days and done_days[-1] != cursor.strftime("%Y-%m-%d"):
+            cursor = cursor - datetime.timedelta(days=1)
+        seen = set(done_days)
+        while cursor.strftime("%Y-%m-%d") in seen:
+            streak += 1
+            cursor -= datetime.timedelta(days=1)
+        # best day + average (minutes actually focused)
+        day_min: dict[str, int] = {}
+        for s in sessions:
+            if s["status"] in ("completed", "abandoned") and s.get("end_ts"):
+                day = time.strftime("%Y-%m-%d", time.localtime(s["start_ts"]))
+                day_min[day] = day_min.get(day, 0) + int((s["end_ts"] - s["start_ts"]) / 60)
+        ended = [s for s in sessions if s["status"] in ("completed", "abandoned") and s.get("end_ts")]
+        avg_min = int(sum((s["end_ts"] - s["start_ts"]) / 60 for s in ended) / len(ended)) if ended else 0
+        nudges = self.db.q1("SELECT COUNT(*) AS n FROM nudges WHERE kind='focus'")
         return {
             "sessions": sessions,
             "today": {"count": len(today_sessions),
@@ -130,6 +163,13 @@ class Focus:
             "learned": {"peak_hours": sorted(by_hour, key=by_hour.get, reverse=True)[:3],
                         "top_distraction_domains": sorted(domains, key=domains.get, reverse=True)[:5]},
             "total_drifts": len(drifts),
+            "recent_drifts": recent,
+            "week": {"count": len(week_sessions), "minutes": week_min},
+            "streak_days": streak,
+            "best_day_min": max(day_min.values()) if day_min else 0,
+            "avg_min": avg_min,
+            "total_completed": len(ended),
+            "nudges_total": (nudges["n"] if nudges else 0),
         }
 
     def allow_domain(self, domain: str) -> dict:

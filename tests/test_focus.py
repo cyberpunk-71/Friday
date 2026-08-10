@@ -2,6 +2,8 @@
 per-kind phone suppression."""
 from __future__ import annotations
 
+import time
+
 from core.focus import Focus
 
 
@@ -82,3 +84,45 @@ def test_focus_completion_nudge(db):
     w._check_focus_completion(__import__("time").time())
     nudges = db.q("SELECT * FROM nudges WHERE kind='focus' AND channel='chrome' ORDER BY nudge_id DESC LIMIT 1")
     assert nudges and "complete" in nudges[0]["message"].lower()
+
+
+def test_focus_stats_body_double_fields(db):
+    """stats() must power the body-double UI: week totals, streak, best day,
+    avg, completed count, recent drift feed with domains."""
+    from core.focus import Focus
+    f = Focus(db)
+    f.start(25, allow=[], task="build the agent ui")
+    # a couple of drifts so the feed has entries
+    f.log_drift("https://youtube.com/shorts/abc")
+    f.log_drift("https://instagram.com/reel")
+    # backdate so the session "lasts" 25 real minutes (tests run in ms)
+    db.exec("UPDATE focus_sessions SET start_ts=? WHERE session_id=?",
+            (time.time() - 25 * 60, 1))
+    f.stop()
+    f.start(45, allow=[], task="write tests")
+    db.exec("UPDATE focus_sessions SET start_ts=? WHERE session_id=?",
+            (time.time() - 45 * 60, 2))
+    f.stop()
+    st = f.stats()
+    assert st["week"]["count"] == 2
+    assert st["week"]["minutes"] >= 70
+    assert st["streak_days"] >= 1
+    assert st["best_day_min"] >= 70
+    assert st["avg_min"] >= 35
+    assert st["total_completed"] == 2
+    assert st["recent_drifts"], "drift feed must be populated"
+    assert any("youtube.com" in d["domain"] for d in st["recent_drifts"])
+    assert st["nudges_total"] >= 1
+    assert "task" in st["sessions"][0]  # task label persisted
+
+
+def test_focus_start_accepts_task(db):
+    """Start endpoint payload carries task + voice through to the session."""
+    from core.focus import Focus
+    f = Focus(db)
+    r = f.start(30, allow=["github.com"], voice=False, task="ship the UI")
+    assert r["ok"] and r["task"] == "ship the UI"
+    s = f.active()
+    assert s["task"] == "ship the UI"
+    assert "github.com" in s["allow_domains"]
+    f.stop()
