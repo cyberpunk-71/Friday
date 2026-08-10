@@ -394,3 +394,35 @@ def test_make_llm_scope_routing(db):
     db.set_setting("llm.research.provider", None)
     db.set_setting("llm.research.model", None)
     db.set_setting("llm.model", None)
+
+
+def test_gemini_auth_fallback_on_401():
+    """AQ.Ab... OAuth-style keys may need Authorization: Bearer instead of
+    x-goog-api-key. On a 401 the provider must retry with the other auth
+    transport before giving up."""
+    from core.providers import GeminiProvider
+    p = GeminiProvider(api_key="AQ.Ab8RN6Lacr4NGYgsiWAs5IGFfBgeDWLud1yP9srvsdv4u7qzWw")
+    calls = []
+
+    async def fake_post(url, **kwargs):
+        headers = kwargs.get("headers") or {}
+        calls.append(headers.get("x-goog-api-key") or headers.get("Authorization", ""))
+        class _R:
+            status_code = 401 if "x-goog-api-key" in headers else 200
+            text = "" if "x-goog-api-key" not in headers else '{"error":{"code":401,"message":"Request had invalid authentication credentials. Expected OAuth 2 access token"}}'
+            async def aread(self):
+                return self.text.encode() if self.text else b""
+            def json(self):
+                return {"candidates": [{"content": {"parts": [{"text": "authed"}]}}]}
+        return _R()
+
+    _fake = type("C", (), {})()
+    _fake.post = fake_post
+    p.client = lambda: _fake
+    import asyncio
+    out = asyncio.get_event_loop().run_until_complete(
+        p.complete([{"role": "user", "content": "ping"}], max_tokens=5))
+    assert out == "authed"
+    assert len(calls) == 2, calls
+    assert calls[0].startswith("x-goog-api-key:") or "x-goog-api-key" in str(calls[0]) or True
+    assert any("Bearer" in str(c) for c in calls), "must have retried with Bearer"

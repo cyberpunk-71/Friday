@@ -551,7 +551,10 @@ class Cortex:
                 err = str(e)[:300]
                 self.db.set_setting("llm.last_error", err)
                 self.db.set_setting("llm.last_error_ts", time.time())
-                yield {"type": "warning", "message": f"Live model unavailable ({err[:120]}) — using fallback."}
+                hint = ""
+                if "401" in err and "gemini" in err:
+                    hint = " Gemini key rejected — it may be expired or unrestricted (Google blocked those on 19 Jun 2026); add a fresh restricted key in Admin → Models & Keys."
+                yield {"type": "warning", "message": f"Live model unavailable ({err[:120]}) — using fallback.{hint}"}
                 # the fallback's output flows through the SAME incremental
                 # ⟨CTRL⟩ parser below
                 self.llm = SimProviderFallback()

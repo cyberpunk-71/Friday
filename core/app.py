@@ -377,14 +377,21 @@ async def providers_test(payload: Optional[dict] = None, _: bool = Depends(_admi
     categorized diagnostics: blocked (no egress / TLS), invalid_key, or ok."""
     from .providers import DeepSeekProvider, GeminiProvider
     provider = (payload.get("provider") if payload else None) or "deepseek"
+    db = get_db()
     if provider == "gemini":
-        key = (payload.get("api_key") if payload else None) or os.environ.get("GEMINI_API_KEY", "")
+        key = ((payload.get("api_key") if payload else None)
+               or db.q1("SELECT api_key FROM provider_keys WHERE provider='gemini' "
+                        "AND scope='default' AND active=1 ORDER BY updated_ts DESC LIMIT 1")
+               or os.environ.get("GEMINI_API_KEY", ""))
         if not key:
             return {"ok": False, "error": "no Gemini key — add it in Models & Keys first"}
         p = GeminiProvider(api_key=key)
         tag = "Gemini"
     else:
-        key = (payload.get("api_key") if payload else None) or os.environ.get("DEEPSEEK_API_KEY", "")
+        key = ((payload.get("api_key") if payload else None)
+               or db.q1("SELECT api_key FROM provider_keys WHERE provider='deepseek' "
+                        "AND scope='default' AND active=1 ORDER BY updated_ts DESC LIMIT 1")
+               or os.environ.get("DEEPSEEK_API_KEY", ""))
         if not key:
             return {"ok": False, "error": "no key configured — set it in Models & Keys or tell Friday in chat"}
         p = DeepSeekProvider(api_key=key)
@@ -399,7 +406,15 @@ async def providers_test(payload: Optional[dict] = None, _: bool = Depends(_admi
                     "detail": msg[:160],
                     "fix": "This sandbox only allows pypi/github egress. On the VM, run "
                            "friday_netcheck and open the OCI security list to 443 outbound "
-                           "if needed — the VM is where live DeepSeek calls run."}
+                           "if needed — the VM is where live calls run."}
+        if "401" in msg and provider == "gemini":
+            return {"ok": False,
+                    "error": "Google rejected the Gemini key (401). It may be expired, revoked, "
+                             "or an unrestricted key that Google blocked on June 19 2026.",
+                    "detail": msg[:200],
+                    "fix": "Create a fresh key at aistudio.google.com/apikey, then in Google "
+                           "Cloud Console restrict it to the Gemini API only — paste the NEW "
+                           "key (AQ.Ab… or AIza…) in Models & Keys and save."}
         return {"ok": False, "error": msg[:200]}
     except Exception as e:
         return {"ok": False, "error": f"{type(e).__name__}: {str(e)[:160]}"}

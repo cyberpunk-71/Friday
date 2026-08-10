@@ -281,44 +281,58 @@ class GeminiProvider(LLMProvider):
             body["tools"] = gtools
         return body
 
-    def _headers(self) -> dict:
+    def _headers(self, mode: str = "key") -> dict:
+        """Auth header for the native Gemini endpoint. New AQ.Ab... 'auth
+        keys' work with x-goog-api-key; OAuth-style tokens (also AQ.Ab...)
+        require Authorization: Bearer — so we support both and fall back."""
+        if mode == "bearer":
+            return {"Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json"}
         return {"x-goog-api-key": self.api_key, "Content-Type": "application/json"}
 
     async def _post(self, suffix: str, body: dict, model_override: str = "",
                     stream: bool = False):
         """POST to /models/{model}{suffix}, walking the candidate chain on
-        model-gone errors. Returns (model, response) on success. The caller
-        must close the response (stream responses stay open for iteration)."""
+        model-gone errors AND the auth-method chain on 401s (x-goog-api-key
+        first, then Bearer — covers both AIza/AQ auth keys and OAuth tokens).
+        Returns (model, response) on success. Caller closes the response."""
         candidates = [model_override] if model_override else self._models
+        auths = ["key", "bearer"]
         last_err = ""
         for m in candidates:
             url = f"/models/{m}{suffix}"
-            try:
-                if stream:
-                    cm = self.client().stream("POST", url, json=body,
-                                              headers=self._headers())
-                    resp = await cm.__aenter__()
-                    if resp.status_code == 200:
-                        return m, resp
-                    err = (await resp.aread()).decode()[:400]
-                    await cm.__aexit__(None, None, None)
-                else:
-                    resp = await self.client().post(url, json=body,
-                                                    headers=self._headers())
-                    if resp.status_code == 200:
-                        return m, resp
-                    err = resp.text[:400]
-                low = err.lower()
-                # model retired / not found → try the next candidate
-                if resp.status_code == 404 and ("no longer available" in low
-                                                or "not found" in low
-                                                or "model" in low):
-                    last_err = err
-                    continue
-                raise RuntimeError(f"gemini {resp.status_code}: {err}")
-            except httpx.ConnectError as e:
-                raise RuntimeError(f"network unreachable for {self.name}: {e}") from e
-        raise RuntimeError(f"gemini: all candidate models unavailable — {last_err[:200]}")
+            for auth in auths:
+                headers = self._headers(auth)
+                try:
+                    if stream:
+                        cm = self.client().stream("POST", url, json=body,
+                                                  headers=headers)
+                        resp = await cm.__aenter__()
+                        if resp.status_code == 200:
+                            return m, resp
+                        err = (await resp.aread()).decode()[:400]
+                        await cm.__aexit__(None, None, None)
+                    else:
+                        resp = await self.client().post(url, json=body,
+                                                        headers=headers)
+                        if resp.status_code == 200:
+                            return m, resp
+                        err = resp.text[:400]
+                    low = err.lower()
+                    # model retired / not found → try the next candidate model
+                    if resp.status_code == 404 and ("no longer available" in low
+                                                    or "not found" in low
+                                                    or "model" in low):
+                        last_err = err
+                        break
+                    # auth rejected → try the other credential transport
+                    if resp.status_code == 401:
+                        last_err = err
+                        continue
+                    raise RuntimeError(f"gemini {resp.status_code}: {err}")
+                except httpx.ConnectError as e:
+                    raise RuntimeError(f"network unreachable for {self.name}: {e}") from e
+        raise RuntimeError(f"gemini: all auth methods failed — {last_err[:220]}")
 
     async def stream(self, messages: list[dict], json_mode: bool = False,
                      temperature: float = 0.6, max_tokens: int | None = None,
