@@ -57,7 +57,8 @@ json.dump(payload, sys.stdout)
     PUSH_LOG=$( ( cd "$WS" && \
       git config user.email "vm-ops@friday.local" 2>&1; \
       git config user.name "Friday VM Ops" 2>&1; \
-      git add -f vm_diagnostics/manual/latest.json vm_diagnostics/eval 2>&1 && \
+      git add -f vm_diagnostics/manual/latest.json 2>&1; \
+      git add -f vm_diagnostics/eval 2>/dev/null || true; \
       git commit -m "vm-ops: $CMD result" 2>&1 && \
       git push origin "HEAD:$BRANCH" 2>&1 ) 2>&1 )
     PUSH_RC=$?
