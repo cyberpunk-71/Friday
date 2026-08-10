@@ -932,10 +932,9 @@ class Cortex:
         # spend
         self.hermes.spend(cost_usd)
 
-        # turn audit (outcome for the Gym)
+        # turn audit (outcome for the Gym) — provider column = real provider
         log_turn(corr_id, text, reply[:4000], latency_ms, cost_usd,
-                 self.llm.name, "deepseek" if self.llm.name == "deepseek" else "sim",
-                 sense["slots"], outcome)
+                 self.llm.name, self.llm.name, sense["slots"], outcome)
 
     @staticmethod
     def _is_correction(text: str) -> bool:
