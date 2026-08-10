@@ -23,7 +23,9 @@ from pathlib import Path
 
 def post_sse(base: str, text: str, timeout: int = 120) -> dict:
     """POST /api/chat, parse SSE, return {reply, model, latency_ms, cost_usd, events}."""
-    body = json.dumps({"text": text}).encode()
+    # llm_scope=eval → the server routes this turn to the eval-scope model
+    # (Admin → Model routing); falls back to chat when unset
+    body = json.dumps({"text": text, "llm_scope": "eval"}).encode()
     req = urllib.request.Request(base + "/api/chat", data=body,
                                  headers={"Content-Type": "application/json"})
     t0 = time.time()

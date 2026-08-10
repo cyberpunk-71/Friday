@@ -25,7 +25,11 @@ from core.db import reset_db_for_tests  # noqa: E402
 
 
 @pytest.fixture()
-def db(tmp_path):
+def db(tmp_path, monkeypatch):
+    # hermetic: admin tests set os.environ["DEEPSEEK_API_KEY"] when saving a
+    # key — clear any leak so make_llm(scope) never hits the network in tests
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     d = tmp_path / "data"
     d.mkdir()
     cfg.reset_for_tests(str(d), str(ROOT / "genome"))

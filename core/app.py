@@ -126,17 +126,27 @@ def _admin_auth(request: Request):
 # =========================================================================== #
 @app.post("/api/chat")
 async def chat(request: Request, payload: dict):
-    """SSE stream: sense → ctrl → deltas → cards → done. Never blocks on tasks."""
+    """SSE stream: sense → ctrl → deltas → cards → done. Never blocks on tasks.
+    Optional llm_scope (eval|research|...) runs this turn on that scope's
+    routed model (Model routing in Admin) instead of the chat model."""
     text = (payload.get("text") or "").strip()
     if not text:
         raise HTTPException(400, "empty text")
     book_id = payload.get("book_id")
+    llm_scope = str(payload.get("llm_scope") or "").strip() or None
     meta = {"corr_id": payload.get("corr_id") or f"cor_{uuid.uuid4().hex[:8]}"}
     cortex = _cortex(request)
 
     async def gen():
         corr_id = meta["corr_id"]
         queue = bus.subscribe(corr_id)
+        prev_llm = cortex.llm
+        if llm_scope and llm_scope != "chat":
+            try:
+                from .providers import make_llm
+                cortex.llm = make_llm(llm_scope)
+            except Exception:
+                pass
         try:
             async for ev in cortex.turn(text, book_id=book_id, meta=meta):
                 yield _sse(ev)
@@ -149,6 +159,8 @@ async def chat(request: Request, payload: dict):
                     break
         finally:
             bus.unsubscribe(corr_id, queue)
+            if prev_llm is not None:
+                cortex.llm = prev_llm   # restore chat model for other turns
 
     return StreamingResponse(gen(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache",
@@ -202,6 +214,17 @@ async def admin_overview(request: Request, _: bool = Depends(_admin_auth)):
         # report the ACTUAL running provider (from the live cortex), not env
         "llm_provider": (request.app.state.cortex.llm.name
                          if getattr(request.app.state, "cortex", None) else "unknown"),
+        # per-scope model routing (admin Model routing card)
+        "llm_scopes": {
+            "chat": {"provider": db.get_setting("llm.provider", "deepseek"),
+                     "model": db.get_setting("llm.model", "") or ""},
+            "research": {"provider": db.get_setting("llm.research.provider", ""),
+                         "model": db.get_setting("llm.research.model", "") or ""},
+            "books": {"provider": db.get_setting("llm.books.provider", ""),
+                      "model": db.get_setting("llm.books.model", "") or ""},
+            "eval": {"provider": db.get_setting("llm.eval.provider", ""),
+                     "model": db.get_setting("llm.eval.model", "") or ""},
+        },
         "search_provider": os.environ.get("SEARCH_PROVIDER", "sim"),
         "spend_today_usd": round(spend, 4), "daily_budget_usd": daily,
         "budget_pct": round(100 * spend / max(0.01, daily), 1),
@@ -288,22 +311,28 @@ async def models_configure(payload: dict, request: Request, _: bool = Depends(_a
 
 @app.post("/api/admin/llm")
 async def admin_llm_switch(payload: dict, request: Request, _: bool = Depends(_admin_auth)):
-    """Switch the ACTIVE chat model (deepseek ↔ gemini) + optional model
-    override, using keys already saved in Models & Keys. No key re-entry."""
+    """Set the model for a SCOPE (chat | research | books | eval) — provider
+    (deepseek ↔ gemini) + optional model override, using keys already saved
+    in Models & Keys. No key re-entry."""
     db = get_db()
+    scope = str(payload.get("scope", "chat"))
     provider = str(payload.get("provider", "deepseek"))
     model = str(payload.get("model", "") or "").strip()
     if provider not in ("deepseek", "gemini"):
         raise HTTPException(400, "provider must be deepseek or gemini")
-    db.set_setting("llm.provider", provider)
-    db.set_setting("llm.model", model or None)
+    if scope == "chat":
+        db.set_setting("llm.provider", provider)
+        db.set_setting("llm.model", model or None)
+    else:
+        db.set_setting(f"llm.{scope}.provider", provider)
+        db.set_setting(f"llm.{scope}.model", model or None)
     from .providers import make_llm
-    llm = make_llm()
-    if getattr(request.app.state, "cortex", None):
+    llm = make_llm(scope)
+    if scope == "chat" and getattr(request.app.state, "cortex", None):
         request.app.state.cortex.llm = llm
-    return {"ok": True, "provider": llm.name,
+    return {"ok": True, "scope": scope, "provider": llm.name,
             "model": getattr(llm, "model", ""),
-            "note": f"chat now runs on {llm.name}"}
+            "note": f"{scope} now runs on {llm.name}"}
 
 
 @app.post("/api/admin/providers/test")
@@ -717,13 +746,15 @@ async def books_ask(book_id: int, payload: dict, request: Request):
     async def gen():
         yield _sse({"type": "sense", "slots": [], "confidence": 0.9, "sense_ms": 1,
                     "now": {}, "constraints": []})
-        # deterministic context + model answer
+        # deterministic context + model answer (books scope → its own model)
+        from .providers import make_llm as _make_llm
+        blm = _make_llm("books")
         prompt = (f"Book context:\n{context}\n\nQuestion: {q}\n\n"
                   "Answer in simple terms, cite page numbers, keep it short.")
-        if cortex.llm.name == "sim":
+        if blm.name == "sim":
             reply = f"From the book (pages {', '.join(str(c['page']) for c in chunks)}): here's the answer — {q[:120]}...\n\n" + chunks[0]["text"][:500] if chunks else "I don't have that in the book yet."
         else:
-            reply = await cortex.llm.complete(
+            reply = await blm.complete(
                 [{"role": "system", "content": "You answer from book context only. Cite pages. Be concise."},
                  {"role": "user", "content": prompt}])
         yield _sse({"type": "delta", "text": reply})

@@ -1223,24 +1223,42 @@ function renderKeys(keys) {
 }
 
 /* Active chat model — shows what chat runs on, switch without re-entering keys */
-async function loadLlmRouting(ov) {
+/* Model routing — per-scope provider + model (chat/research/books/eval) */
+const ROUTE_LABEL = { chat: "Chat", research: "Deep research", books: "Books", eval: "Eval 50" };
+function loadLlmRouting(ov) {
   try {
-    const s = await api("/api/admin/settings");
-    const prov = s["llm.provider"] || (String(ov.llm_provider || "").includes("gemini") ? "gemini" : "deepseek");
-    $("#llm-provider").value = prov;
-    $("#llm-model").value = s["llm.model"] || "";
-    const cur = `${esc(ov.llm_provider || "sim")}${ov.llm_model ? " · " + esc(ov.llm_model) : ""}`;
-    $("#llm-status").innerHTML = `<span class="chip good">now running: ${cur}</span> <span class="dim">switch needs a saved key for the target provider</span>`;
+    const scopes = (ov && ov.llm_scopes) || {};
+    $$(".route-row").forEach(row => {
+      const scope = row.dataset.scope;
+      const cfg = scopes[scope] || {};
+      const prov = (scope === "chat" ? cfg.provider : (cfg.provider || (scopes.chat && scopes.chat.provider) || "deepseek")) || "deepseek";
+      const model = cfg.model || "";
+      row.querySelector(".route-provider").value = prov;
+      row.querySelector(".route-model").value = model;
+      const st = row.querySelector(".route-status");
+      const inherit = scope !== "chat" && !cfg.provider;
+      st.textContent = inherit
+        ? `inherits chat (${prov}${model ? " · " + model : ""})`
+        : `${prov}${model ? " · " + model : ""}`;
+    });
   } catch (e) {}
 }
-$("#llm-save").addEventListener("click", async () => {
+$$(".route-apply").forEach(btn => btn.addEventListener("click", async () => {
+  const row = btn.closest(".route-row");
+  const scope = row.dataset.scope;
+  const provider = row.querySelector(".route-provider").value;
+  const model = row.querySelector(".route-model").value.trim();
+  const st = row.querySelector(".route-status");
+  st.textContent = "applying…";
   try {
-    const r = await api("/api/admin/llm", { method: "POST", body: JSON.stringify({ provider: $("#llm-provider").value, model: $("#llm-model").value }) });
-    $("#llm-status").innerHTML = `<span class="chip good">✓ chat now runs on ${esc(r.provider)} · ${esc(r.model)}</span>`;
-    toast(`Switched chat to ${r.provider}`, "good");
-    setTimeout(() => loadAdmin(), 1200);
-  } catch (e) { $("#llm-status").innerHTML = `<span class="chip bad">✗ ${esc(e.message)}</span>`; }
-});
+    const r = await api("/api/admin/llm", { method: "POST", body: JSON.stringify({ scope, provider, model }) });
+    st.innerHTML = `<span class="chip good">✓ ${ROUTE_LABEL[scope] || scope} → ${esc(r.provider)}${r.model ? " · " + esc(r.model) : ""}</span>`;
+    toast(`${ROUTE_LABEL[scope] || scope} now on ${r.provider}`, "good");
+    if (scope === "chat") setTimeout(() => loadAdmin(), 1500);
+  } catch (e) {
+    st.innerHTML = `<span class="chip bad">✗ ${esc(e.message)}</span>`;
+  }
+}));
 $("#mc-save").addEventListener("click", async () => {
   const body = { provider: $("#mc-provider").value, scope: "default", api_key: $("#mc-key").value };
   if (!body.api_key) return toast("enter a key");

@@ -637,3 +637,23 @@ table.data th { background: var(--card-2); font-size: 10px; text-transform: uppe
 
 /* gentle mode */
 .bd-check input { accent-color: var(--accent); }
+
+/* ============================================================
+   MODEL ROUTING (admin)
+   ============================================================ */
+.routing-table { display: flex; flex-direction: column; gap: 6px; }
+.route-row {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  background: var(--card-2); border: 1px solid var(--line); border-radius: 12px;
+  padding: 10px 12px;
+}
+.route-label { width: 150px; display: flex; flex-direction: column; gap: 2px; }
+.route-label b { font-size: 13px; }
+.route-label .dim { font-size: 10.5px; }
+.route-provider { min-width: 120px; width: 120px; }
+.route-model { min-width: 200px; flex: 1; }
+.route-status { font-size: 11px; min-width: 120px; }
+.route-apply { flex-shrink: 0; }
+@media (max-width: 700px) {
+  .route-label { width: 100%; }
+}

@@ -275,6 +275,9 @@ class Cortex:
         Falls back to deterministic search+read when the provider lacks tools."""
         rounds = 0
         cost = 0.0
+        # deep research can run on its own model (admin: Model routing → Research)
+        from .providers import make_llm as _make_llm
+        llm = _make_llm("research")
         sys_p = self._system_prompt(sense)
         messages = [{"role": "system", "content": sys_p},
                     {"role": "user", "content":
@@ -289,8 +292,8 @@ class Cortex:
         try:
             while rounds < 2:
                 try:
-                    res = await self.llm.complete_tools(messages, TOOL_SCHEMAS,
-                                                        temperature=0.3)
+                    res = await llm.complete_tools(messages, TOOL_SCHEMAS,
+                                                   temperature=0.3)
                 except RuntimeError:
                     break  # network down → deterministic fallback below
                 cost += 0.0002

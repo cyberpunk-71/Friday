@@ -322,3 +322,75 @@ def test_make_llm_gemini_routing(db):
     db.exec("DELETE FROM provider_keys WHERE provider='gemini'")
     p3 = make_llm()
     assert p3.name in ("sim", "deepseek")
+
+
+def test_gemini_model_chain_falls_forward_on_404():
+    """Google retired gemini-2.5-flash for new users (July 2026). When the
+    configured model 404s with 'no longer available', the provider must try
+    the next candidate in the GA chain instead of failing."""
+    from core.providers import GeminiProvider
+    p = GeminiProvider(api_key="AIza-test-key", model="gemini-2.5-flash")
+    assert p._models[0] == "gemini-2.5-flash"
+    assert "gemini-3.6-flash" in p._models
+
+    calls = []
+
+    async def fake_post(url, **kwargs):
+        calls.append(url)
+        body_err = b'{"error": {"message": "This model models/gemini-2.5-flash is no longer available to new users. Please update your code to use a newer model"}}'
+        class _R:
+            status_code = 404 if "gemini-2.5-flash" in url else 200
+            text = body_err.decode() if status_code == 404 else ""
+            async def aread(self):
+                return body_err if self.status_code == 404 else b""
+            def json(self):
+                return {"candidates": [{"content": {"parts": [{"text": "hi from fallback"}]}}]}
+        return _R()
+
+    _fake = type("C", (), {})()
+    _fake.post = fake_post
+    p.client = lambda: _fake
+    import asyncio
+    out = asyncio.get_event_loop().run_until_complete(
+        p.complete([{"role": "user", "content": "ping"}], max_tokens=5))
+    assert out == "hi from fallback"
+    assert len(calls) == 2, calls          # first model 404'd, second succeeded
+    assert "gemini-2.5-flash" in calls[0] and "gemini-3.6-flash" in calls[1]
+
+
+def test_make_llm_scope_routing(db):
+    """Per-scope models: research can run on gemini while chat stays on
+    deepseek; scopes inherit chat model only when provider matches."""
+    import os as _os
+    from core.providers import make_llm
+    _os.environ.pop("DEEPSEEK_API_KEY", None)
+    _os.environ.pop("GEMINI_API_KEY", None)
+    db.set_setting("llm.provider", "deepseek")
+    db.set_setting("llm.model", "")
+    db.set_setting("llm.research.provider", "gemini")
+    db.set_setting("llm.research.model", "gemini-3.6-flash")
+    db.exec("INSERT INTO provider_keys(provider,scope,api_key,active,source,created_ts,updated_ts)"
+            " VALUES('gemini','default','AIza-fake-1234567890',1,'admin',?,?)", (1, 1))
+    # chat → deepseek (no deepseek key → sim/env fallback)
+    chat = make_llm("chat")
+    assert chat.name in ("sim", "deepseek")
+    # research → gemini with its own model
+    res = make_llm("research")
+    assert res.name == "gemini" and res.model == "gemini-3.6-flash"
+    # books: no routing set → inherits chat provider (deepseek)
+    books = make_llm("books")
+    assert books.name in ("sim", "deepseek")
+    # gemini model string must NOT leak into a deepseek-scope call
+    db.set_setting("llm.model", "gemini-3.6-flash")   # chat model = gemini string
+    db.set_setting("llm.research.model", "")           # research clears its model
+    res2 = make_llm("research")                        # research still gemini
+    assert res2.name == "gemini"
+    books2 = make_llm("books")                         # books = deepseek + NO gemini model
+    assert books2.name in ("sim", "deepseek")
+    if books2.name == "deepseek":
+        assert "gemini" not in books2.model
+    # cleanup
+    db.exec("DELETE FROM provider_keys WHERE provider='gemini'")
+    db.set_setting("llm.research.provider", None)
+    db.set_setting("llm.research.model", None)
+    db.set_setting("llm.model", None)

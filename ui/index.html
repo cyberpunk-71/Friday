@@ -4,7 +4,7 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Friday–Δ</title>
-<link rel="stylesheet" href="/static/style.css?v=3.3.0"/>
+<link rel="stylesheet" href="/static/style.css?v=3.4.0"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%23ff7849'/><stop offset='1' stop-color='%23ff5e3a'/></linearGradient></defs><rect x='8' y='8' width='84' height='84' rx='22' fill='url(%23g)'/><text x='50' y='68' font-size='52' text-anchor='middle' fill='white' font-family='Georgia,serif'>Δ</text></svg>"/>
 </head>
 <body>
@@ -70,7 +70,7 @@
         <div id="sys-status" class="dim">loading…</div>
         <div class="sys-row">
           <button id="theme-toggle" class="mini-btn" title="Toggle light/dark">◐ Theme</button>
-          <div id="ui-version" class="dim">UI v3.3 · core 0.1.0</div>
+          <div id="ui-version" class="dim">UI v3.4 · core 0.1.0</div>
         </div>
       </div>
     </div>
@@ -217,16 +217,58 @@
             <div id="mc-result"></div>
           </div>
           <div class="card">
-            <h3>Active chat model</h3>
-            <div class="form-row">
-              <select id="llm-provider">
-                <option value="deepseek">DeepSeek · deepseek-chat</option>
-                <option value="gemini">Gemini · gemini-2.5-flash</option>
-              </select>
-              <input id="llm-model" type="text" placeholder="model override (optional)" style="min-width:220px"/>
-              <button id="llm-save" class="btn primary">Switch model</button>
+            <h3>Model routing — per task</h3>
+            <p class="dim" style="margin-bottom:8px">Pick a provider + model for each task type. Uses the keys saved above — no re-entry. Gemini auto-falls-forward if a model gets retired.</p>
+            <div class="routing-table">
+              <div class="route-row" data-scope="chat">
+                <div class="route-label"><b>Chat</b><span class="dim">main replies + eval</span></div>
+                <select class="route-provider">
+                  <option value="deepseek">DeepSeek</option>
+                  <option value="gemini">Gemini</option>
+                </select>
+                <input class="route-model" type="text" placeholder="model (e.g. gemini-3.6-flash)" list="gemini-models"/>
+                <button class="btn ghost route-apply">Apply</button>
+                <span class="route-status dim"></span>
+              </div>
+              <div class="route-row" data-scope="research">
+                <div class="route-label"><b>Deep research</b><span class="dim">multi-round web research</span></div>
+                <select class="route-provider">
+                  <option value="deepseek">DeepSeek</option>
+                  <option value="gemini">Gemini</option>
+                </select>
+                <input class="route-model" type="text" placeholder="inherit chat model" list="gemini-models"/>
+                <button class="btn ghost route-apply">Apply</button>
+                <span class="route-status dim"></span>
+              </div>
+              <div class="route-row" data-scope="books">
+                <div class="route-label"><b>Books</b><span class="dim">book Q&amp;A / summaries</span></div>
+                <select class="route-provider">
+                  <option value="deepseek">DeepSeek</option>
+                  <option value="gemini">Gemini</option>
+                </select>
+                <input class="route-model" type="text" placeholder="inherit chat model" list="gemini-models"/>
+                <button class="btn ghost route-apply">Apply</button>
+                <span class="route-status dim"></span>
+              </div>
+              <div class="route-row" data-scope="eval">
+                <div class="route-label"><b>Eval 50</b><span class="dim">test suite runs</span></div>
+                <select class="route-provider">
+                  <option value="deepseek">DeepSeek</option>
+                  <option value="gemini">Gemini</option>
+                </select>
+                <input class="route-model" type="text" placeholder="inherit chat model" list="gemini-models"/>
+                <button class="btn ghost route-apply">Apply</button>
+                <span class="route-status dim"></span>
+              </div>
             </div>
-            <div id="llm-status" class="dim" style="margin-top:6px">uses the keys you saved above — no re-entry needed</div>
+            <datalist id="gemini-models">
+              <option value="gemini-3.6-flash"></option>
+              <option value="gemini-3.5-flash"></option>
+              <option value="gemini-3.5-flash-lite"></option>
+              <option value="gemini-3.1-flash-lite"></option>
+              <option value="deepseek-chat"></option>
+              <option value="deepseek-reasoner"></option>
+            </datalist>
           </div>
           <div id="provider-keys" class="cards"></div>
         </div>
@@ -274,6 +316,6 @@
 <div id="toast-stack"></div>
 <div id="chrome-modal" class="hidden"><div id="chrome-modal-box"></div></div>
 
-<script src="/static/app.js?v=3.3.0"></script>
+<script src="/static/app.js?v=3.4.0"></script>
 </body>
 </html>

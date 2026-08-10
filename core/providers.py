@@ -169,7 +169,18 @@ class DeepSeekProvider(LLMProvider):
 # messages and tools are converted to Gemini's contents + functionDeclarations.
 # --------------------------------------------------------------------------- #
 GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"
-GEMINI_DEFAULT_MODEL = "gemini-2.5-flash"
+# Model chain — newest GA first. Google retires models without warning
+# (gemini-2.5-flash 404'd for new users in July 2026), so the provider tries
+# each in order and silently falls forward on "no longer available" errors.
+GEMINI_DEFAULT_MODEL = "gemini-3.6-flash"
+GEMINI_MODELS = [
+    "gemini-3.6-flash",          # GA · best price/perf for agentic chat
+    "gemini-3.5-flash-lite",     # GA · fastest, cheapest 3.5
+    "gemini-3.5-flash",          # frontier flash
+    "gemini-3.1-flash-lite",     # workhorse, cheap
+    "gemini-3-flash-preview",    # preview, free tier
+    "gemini-2.5-flash",          # legacy — old keys may still reach it
+]
 
 
 def _gemini_contents(messages: list[dict]) -> tuple[list[dict], list[dict]]:
@@ -238,7 +249,10 @@ class GeminiProvider(LLMProvider):
                  model: str | None = None) -> None:
         self.api_key = api_key or os.environ.get("GEMINI_API_KEY", "")
         self.base_url = (base_url or os.environ.get("GEMINI_BASE_URL", GEMINI_BASE)).rstrip("/")
-        self.model = model or os.environ.get("GEMINI_MODEL", GEMINI_DEFAULT_MODEL)
+        self.model = (model or os.environ.get("GEMINI_MODEL", "") or GEMINI_DEFAULT_MODEL).strip()
+        # candidate chain: configured model first, then the GA list — used to
+        # fall forward when Google retires a model mid-flight (404)
+        self._models = [self.model] + [m for m in GEMINI_MODELS if m != self.model]
         self._client: httpx.AsyncClient | None = None
 
     @property
@@ -270,82 +284,101 @@ class GeminiProvider(LLMProvider):
     def _headers(self) -> dict:
         return {"x-goog-api-key": self.api_key, "Content-Type": "application/json"}
 
+    async def _post(self, suffix: str, body: dict, model_override: str = "",
+                    stream: bool = False):
+        """POST to /models/{model}{suffix}, walking the candidate chain on
+        model-gone errors. Returns (model, response) on success. The caller
+        must close the response (stream responses stay open for iteration)."""
+        candidates = [model_override] if model_override else self._models
+        last_err = ""
+        for m in candidates:
+            url = f"/models/{m}{suffix}"
+            try:
+                if stream:
+                    cm = self.client().stream("POST", url, json=body,
+                                              headers=self._headers())
+                    resp = await cm.__aenter__()
+                    if resp.status_code == 200:
+                        return m, resp
+                    err = (await resp.aread()).decode()[:400]
+                    await cm.__aexit__(None, None, None)
+                else:
+                    resp = await self.client().post(url, json=body,
+                                                    headers=self._headers())
+                    if resp.status_code == 200:
+                        return m, resp
+                    err = resp.text[:400]
+                low = err.lower()
+                # model retired / not found → try the next candidate
+                if resp.status_code == 404 and ("no longer available" in low
+                                                or "not found" in low
+                                                or "model" in low):
+                    last_err = err
+                    continue
+                raise RuntimeError(f"gemini {resp.status_code}: {err}")
+            except httpx.ConnectError as e:
+                raise RuntimeError(f"network unreachable for {self.name}: {e}") from e
+        raise RuntimeError(f"gemini: all candidate models unavailable — {last_err[:200]}")
+
     async def stream(self, messages: list[dict], json_mode: bool = False,
                      temperature: float = 0.6, max_tokens: int | None = None,
                      **kw) -> AsyncIterator[str]:
         body = self._body(messages, temperature, max_tokens)
-        url = f"/models/{kw.get('model', self.model)}:streamGenerateContent?alt=sse"
+        _model, resp = await self._post(":streamGenerateContent?alt=sse", body,
+                                        model_override=kw.get("model", ""), stream=True)
         try:
-            async with self.client().stream("POST", url, json=body,
-                                            headers=self._headers()) as resp:
-                if resp.status_code != 200:
-                    err = (await resp.aread()).decode()[:400]
-                    raise RuntimeError(f"gemini {resp.status_code}: {err}")
-                async for line in resp.aiter_lines():
-                    if not line.startswith("data:"):
-                        continue
-                    data = line[5:].strip()
-                    if not data:
-                        continue
-                    try:
-                        obj = json.loads(data)
-                    except json.JSONDecodeError:
-                        continue
-                    for cand in obj.get("candidates", []) or []:
-                        for part in (cand.get("content", {}).get("parts", []) or []):
-                            if part.get("text"):
-                                yield part["text"]
-        except httpx.ConnectError as e:
-            raise RuntimeError(f"network unreachable for {self.name}: {e}") from e
+            async for line in resp.aiter_lines():
+                if not line.startswith("data:"):
+                    continue
+                data = line[5:].strip()
+                if not data:
+                    continue
+                try:
+                    obj = json.loads(data)
+                except json.JSONDecodeError:
+                    continue
+                for cand in obj.get("candidates", []) or []:
+                    for part in (cand.get("content", {}).get("parts", []) or []):
+                        if part.get("text"):
+                            yield part["text"]
+        finally:
+            await resp.aclose()
 
     async def complete(self, messages: list[dict], json_mode: bool = False,
                        temperature: float = 0.6, max_tokens: int | None = None,
                        **kw) -> str:
         body = self._body(messages, temperature, max_tokens)
-        url = f"/models/{kw.get('model', self.model)}:generateContent"
-        try:
-            resp = await self.client().post(url, json=body, headers=self._headers())
-            if resp.status_code != 200:
-                err = resp.text[:400]
-                raise RuntimeError(f"gemini {resp.status_code}: {err}")
-            obj = resp.json()
-            parts = (obj.get("candidates", [{}])[0].get("content", {}).get("parts", []) or [])
-            return "".join(p.get("text", "") for p in parts)
-        except httpx.ConnectError as e:
-            raise RuntimeError(f"network unreachable for {self.name}: {e}") from e
+        _model, resp = await self._post(":generateContent", body,
+                                        model_override=kw.get("model", ""))
+        obj = resp.json()
+        parts = (obj.get("candidates", [{}])[0].get("content", {}).get("parts", []) or [])
+        return "".join(p.get("text", "") for p in parts)
 
     async def complete_tools(self, messages: list[dict], tools: list[dict],
                              temperature: float = 0.3, max_tokens: int = 600,
                              tool_choice: str | None = None) -> dict:
         body = self._body(messages, temperature, max_tokens, tools=tools)
-        url = f"/models/{self.model}:generateContent"
-        try:
-            resp = await self.client().post(url, json=body, headers=self._headers())
-            if resp.status_code != 200:
-                err = resp.text[:400]
-                raise RuntimeError(f"gemini {resp.status_code}: {err}")
-            obj = resp.json()
-            cand = (obj.get("candidates") or [{}])[0]
-            parts = (cand.get("content", {}).get("parts", []) or [])
-            out: dict = {"content": "", "finish": cand.get("finishReason", ""),
-                         "tool_calls": []}
-            for p in parts:
-                if "text" in p:
-                    out["content"] += p["text"]
-                elif "functionCall" in p:
-                    fc = p["functionCall"]
-                    out["tool_calls"].append({
-                        "id": f"{fc.get('name', 'tool')}_{len(out['tool_calls'])}",
-                        "name": fc.get("name", ""),
-                        "arguments": json.dumps(fc.get("args", {}), ensure_ascii=False),
-                    })
-            return out
-        except httpx.ConnectError as e:
-            raise RuntimeError(f"network unreachable for {self.name}: {e}") from e
+        _model, resp = await self._post(":generateContent", body)
+        obj = resp.json()
+        cand = (obj.get("candidates") or [{}])[0]
+        parts = (cand.get("content", {}).get("parts", []) or [])
+        out: dict = {"content": "", "finish": cand.get("finishReason", ""),
+                     "tool_calls": []}
+        for p in parts:
+            if "text" in p:
+                out["content"] += p["text"]
+            elif "functionCall" in p:
+                fc = p["functionCall"]
+                out["tool_calls"].append({
+                    "id": f"{fc.get('name', 'tool')}_{len(out['tool_calls'])}",
+                    "name": fc.get("name", ""),
+                    "arguments": json.dumps(fc.get("args", {}), ensure_ascii=False),
+                })
+        return out
 
     @staticmethod
     def usage_cost(usage: dict) -> float:
-        """Gemini 2.5 Flash pricing: $0.30/M in, $2.50/M out."""
+        """Gemini Flash pricing ballpark: $0.30/M in, $2.50/M out."""
         if not usage:
             return 0.0
         cin = usage.get("promptTokenCount", usage.get("prompt_tokens", 0))
@@ -670,17 +703,24 @@ TOOL_SCHEMAS: list[dict] = [
 ]
 
 
-def make_llm() -> LLMProvider:
-    """Provider selection with precedence:
-      1. DB setting llm.provider (admin panel "Active chat model") + the
-         matching DB provider_key — the user's live choice.
-      2. .env DEEPSEEK_API_KEY / GEMINI_API_KEY.
-      3. offline sim."""
+def make_llm(scope: str = "chat") -> LLMProvider:
+    """Provider selection per SCOPE (chat | research | books | eval | ...).
+    Precedence per scope:
+      1. DB setting llm.{scope}.provider + llm.{scope}.model (admin routing)
+         with fallback to the chat defaults llm.provider / llm.model.
+      2. The matching DB provider_key (admin panel / chat-set).
+      3. .env DEEPSEEK_API_KEY / GEMINI_API_KEY.
+      4. offline sim."""
     try:
         from .db import get_db
         db = get_db()
-        want = db.get_setting("llm.provider", "deepseek") or "deepseek"
-        model = db.get_setting("llm.model", "") or ""
+        chat_prov = db.get_setting("llm.provider", "deepseek") or "deepseek"
+        want = db.get_setting(f"llm.{scope}.provider", "") or chat_prov
+        model = db.get_setting(f"llm.{scope}.model", "") or ""
+        # a scope inherits chat's model override ONLY when it uses the same
+        # provider (a gemini model string must never leak into deepseek calls)
+        if not model and want == chat_prov:
+            model = db.get_setting("llm.model", "") or ""
         # Gemini first if selected
         if want == "gemini":
             row = db.q1(
