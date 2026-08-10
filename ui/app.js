@@ -770,25 +770,36 @@ function bdFmt(s) {
 /* ---------------- sound: chimes + ambient brown noise ---------------- */
 let ambient = { on: false, ctx: null };
 function chime(kind) {
+  /* music-box style bells: pure sines with a soft exponential decay + a
+     quiet upper harmonic for warmth. Each event is a tiny melody. */
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const t0 = ctx.currentTime;
     const notes = {
-      start:   [[660, 0, .09]],
-      warn:    [[880, 0, .08], [880, .13, .08]],
-      workEnd: [[880, 0, .1], [880, .16, .1], [880, .32, .18]],
-      breakEnd:[[660, 0, .1], [880, .16, .18]],
-      win:     [[660, 0, .1], [880, .14, .1], [1046, .28, .22]],
-    }[kind] || [[660, 0, .1]];
+      start:    [[523.25, 0, .35], [783.99, .12, .45]],                  // C5 → G5, lifts you up
+      warn:     [[659.25, 0, .3], [659.25, .2, .35]],                    // soft E5 double-tap
+      workEnd:  [[783.99, 0, .35], [659.25, .18, .4], [523.25, .36, .5]],// G→E→C, gentle descent
+      breakEnd: [[523.25, 0, .3], [659.25, .15, .35], [783.99, .3, .5]], // C→E→G, rising
+      win:      [[523.25, 0, .25], [659.25, .12, .25], [783.99, .24, .3], [1046.5, .38, .6]], // C-E-G-C arpeggio
+    }[kind] || [[523.25, 0, .35]];
     notes.forEach(([f, at, dur]) => {
       const o = ctx.createOscillator(), g = ctx.createGain();
       o.type = "sine"; o.frequency.value = f;
-      g.gain.setValueAtTime(0.0001, ctx.currentTime + at);
-      g.gain.exponentialRampToValueAtTime(0.12, ctx.currentTime + at + .02);
-      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + at + dur);
+      g.gain.setValueAtTime(0.0001, t0 + at);
+      g.gain.exponentialRampToValueAtTime(0.11, t0 + at + .02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + at + dur);
       o.connect(g); g.connect(ctx.destination);
-      o.start(ctx.currentTime + at); o.stop(ctx.currentTime + at + dur + .05);
+      o.start(t0 + at); o.stop(t0 + at + dur + .05);
+      // soft upper harmonic (2x freq) for a warmer bell
+      const o2 = ctx.createOscillator(), g2 = ctx.createGain();
+      o2.type = "sine"; o2.frequency.value = f * 2;
+      g2.gain.setValueAtTime(0.0001, t0 + at);
+      g2.gain.exponentialRampToValueAtTime(0.03, t0 + at + .01);
+      g2.gain.exponentialRampToValueAtTime(0.0001, t0 + at + dur * 0.7);
+      o2.connect(g2); g2.connect(ctx.destination);
+      o2.start(t0 + at); o2.stop(t0 + at + dur * 0.7 + .05);
     });
-    setTimeout(() => ctx.close(), 1500);
+    setTimeout(() => ctx.close(), 1800);
   } catch (e) {}
 }
 function toggleAmbient(on) {
@@ -1060,6 +1071,27 @@ function bdGreeting() {
   return "Late-night focus crew. I'm here with you.";
 }
 
+/* typing-safe re-render: never blow away text the user is typing in a
+   studio input (the 3s poll re-rendered on drift_count changes and wiped
+   the brain-dump / notes / plan fields mid-typing) */
+function bdTyping() {
+  const el = document.activeElement;
+  return !!(el && el.id && el.id.startsWith("bd-") && (el.tagName === "INPUT" || el.tagName === "TEXTAREA"));
+}
+function bdSnapshotInputs() {
+  const snap = [];
+  $$("#bd-host input, #bd-host textarea").forEach(el =>
+    snap.push({ id: el.id, value: el.value, sel: el.selectionStart }));
+  return snap;
+}
+function bdRestoreInputs(snap) {
+  if (!snap) return;
+  snap.forEach(s => {
+    const el = $("#" + s.id);
+    if (el && document.activeElement !== el) el.value = s.value;
+  });
+}
+
 function renderFocusStudio(s, stats) {
   const host = $("#bd-host");
   if (!host) return;
@@ -1067,6 +1099,13 @@ function renderFocusStudio(s, stats) {
     renderCelebration(state.focus.lastSummary);
     return;
   }
+  if (bdTyping() && s) {
+    // user is mid-typing in a studio input — refresh only the log, never
+    // replace the DOM (that would lose their text + caret)
+    renderCompanionLog();
+    return;
+  }
+  const snap = bdSnapshotInputs();
   if (!s) {
     const st = stats || {};
     const f = st.focus || {};
@@ -1180,6 +1219,7 @@ function renderFocusStudio(s, stats) {
     if (j5) j5.addEventListener("click", () => startFocus({ minutes: 5, justStart: true }));
     const amb = $("#bd-ambient");
     if (amb) amb.addEventListener("change", () => toggleAmbient(amb.checked));
+    bdRestoreInputs(snap);   // idle-screen inputs (plan/task/reward) survive re-renders
     return;
   }
   /* ---------------- active session ---------------- */
@@ -1293,6 +1333,7 @@ function renderFocusStudio(s, stats) {
   const tinput = $("#bd-thought-input");
   if (tinput) tinput.addEventListener("keydown", (e) => { if (e.key === "Enter") saveThought(); });
   renderCompanionLog();
+  bdRestoreInputs(snap);
 }
 
 function renderCompanionLog() {
@@ -1332,7 +1373,10 @@ function bdOnDrift(domain) {
   const d = String(domain || "").replace(/^www\./, "").slice(0, 40);
   bdSay(bdRand(BD_LINES.drift).replace("{d}", d || "another tab"), "drift");
   if (state.view === "focus") {
-    api("/api/focus/stats").then(st => { state.focus.stats = st; renderFocusStudio(state.focus.active, st); }).catch(() => {});
+    api("/api/focus/stats").then(st => {
+      state.focus.stats = st;
+      if (!bdTyping()) renderFocusStudio(state.focus.active, st);
+    }).catch(() => {});
   }
 }
 
@@ -1753,13 +1797,20 @@ function speakNudge(text) {
   } catch (e) {}
 }
 function beep() {
+  /* gentle two-note 'ding-ding' bell — replaces the harsh 880Hz square bip */
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const o = ctx.createOscillator(), g = ctx.createGain();
-    o.type = "square"; o.frequency.value = 880;
-    g.gain.value = 0.06;
-    o.connect(g); g.connect(ctx.destination);
-    o.start(); setTimeout(() => { o.stop(); ctx.close(); }, 220);
+    const t0 = ctx.currentTime;
+    [[659.25, 0, .32], [880, .15, .42]].forEach(([f, at, dur]) => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = "sine"; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t0 + at);
+      g.gain.exponentialRampToValueAtTime(0.13, t0 + at + .02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + at + dur);
+      o.connect(g); g.connect(ctx.destination);
+      o.start(t0 + at); o.stop(t0 + at + dur + .05);
+    });
+    setTimeout(() => ctx.close(), 1200);
   } catch (e) {}
 }
 /* request notification permission on first user gesture (chat focus-start
@@ -1905,8 +1956,8 @@ $("#theme-toggle").addEventListener("click", async () => {
       state.focus.active = now;
       state.focus.total = now ? now.target_min : 25;
       state.focus.ends = now ? now.start_ts + now.target_min * 60 : 0;
-      if (changed) loadFocus();          // full re-render on state change
-      else renderFocusWidget(now);       // lightweight time refresh otherwise
+      if (changed && !bdTyping()) loadFocus();   // never wipe typing on re-render
+      else renderFocusWidget(now);               // lightweight refresh otherwise
     } catch (e) {}
   }, 3000);
   setInterval(pollFocus, 1000);
