@@ -172,6 +172,8 @@ function switchView(v) {
   if (v === "tasks") loadTasks();
   if (v === "memory") loadMemory();
   if (v === "focus") loadFocus();
+  if (v === "today") loadToday();
+  if (v === "garden") loadGarden();
   if (v === "books") loadBooks();
   if (v === "admin") loadAdmin();
   if (v === "chat") $("#composer-input").focus();
@@ -1504,10 +1506,194 @@ async function loadFocus() {
   renderFocusWidget(s);
 }
 
+/* ============================== TODAY — the sanctuary landing ============================== */
+const DAILY_QUOTES = [
+  "Small steps, kept daily, are the quiet engine of everything.",
+  "You don't need more time — you need a gentler way to use it.",
+  "A started task is already half-done; a started session is already a win.",
+  "Come back as many times as you need. Returning is the skill.",
+  "Five minutes of showing up beats an hour of planning to show up.",
+  "The garden grows one seed at a time — today is one seed.",
+  "Peace is not the absence of noise; it's the choice of where to point your mind.",
+  "Your brain works with you, not against you — you just have to offload the rest.",
+];
+function dailyQuote() {
+  const d = new Date();
+  const start = new Date(d.getFullYear(), 0, 0);
+  const day = Math.floor((d - start) / 86400000);
+  return DAILY_QUOTES[day % DAILY_QUOTES.length];
+}
+function todayLabel() {
+  return new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" });
+}
+async function loadToday() {
+  const host = $("#today-host");
+  if (!host) return;
+  const [active, stats, plan] = await Promise.all([
+    api("/api/focus/active"), api("/api/focus/stats"), api("/api/focus/plan"),
+  ]);
+  const s = active.session;
+  const f = (stats && stats.focus) || {};
+  const items = (plan && plan.items) || [];
+  const completedCount = items.filter(i => i.done).length;
+  host.innerHTML = `
+    <div class="today-hero">
+      <div class="today-hero-aura"></div>
+      <div class="today-date">${todayLabel()}</div>
+      <div class="today-greet">${bdGreeting()}</div>
+      <div class="today-quote">“${dailyQuote()}”</div>
+      ${s ? `
+        <div class="today-active">
+          <div class="today-active-ring"><svg viewBox="0 0 60 60">
+            <circle cx="30" cy="30" r="26" class="today-ring-bg"/>
+            <circle cx="30" cy="30" r="26" class="today-ring-fg" id="today-ring-fg"/>
+          </svg><span id="today-mini-time">00:00</span></div>
+          <div>
+            <div class="today-active-title">session in progress</div>
+            <div class="today-active-task">${s.task ? esc(s.task) : "deep work"}</div>
+            <div class="today-active-actions">
+              <button class="btn primary" onclick="switchView('focus')">Open studio</button>
+              <button class="btn ghost" onclick="finishSession()">🏁 Finish</button>
+            </div>
+          </div>
+        </div>` : `
+        <button id="today-start" class="today-start">◎ Start a focus session</button>
+        <div class="today-ready">I'm here whenever you are — same room, same timer.</div>`}
+    </div>
+    <div class="today-grid">
+      <div class="card today-plan-card">
+        <div class="today-card-title">today's plan</div>
+        <div class="dim" style="font-size:11.5px;margin:2px 0 8px">3 gentle intentions are plenty.</div>
+        <div id="today-plan-list" class="today-plan-list">
+          ${items.length ? items.map((it, i) => `
+            <div class="today-plan-item ${it.done ? "done" : ""}" data-i="${i}">
+              <button class="today-plan-check" title="done">${it.done ? "✓" : ""}</button>
+              <span>${esc(it.text)}</span>
+              <button class="today-plan-x" title="remove">×</button>
+            </div>`).join("") : `<div class="dim" style="font-size:12px">nothing planned yet — one intention is enough.</div>`}
+        </div>
+        <div class="today-plan-add">
+          <input id="today-plan-input" type="text" placeholder="add an intention…" maxlength="120"/>
+          <button id="today-plan-go" class="mini-btn primary">Add</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="today-card-title">this week</div>
+        <div class="bd-garden" style="margin:8px 0 6px">${bdGarden(stats)}</div>
+        <div class="today-week-stats">
+          <span><b>${stats.streak_days || 0}</b> day streak 🔥</span>
+          <span><b>${stats.week ? stats.week.minutes : 0}m</b> this week</span>
+          <span><b>${f.avg_score || 0}</b> avg focus score</span>
+        </div>
+        <div class="dim" style="font-size:11.5px;margin-top:8px">${f.best_hour != null ? `you focus best around <b>${f.best_hour}:00</b>` : "plant your first seed to see your best hour"}</div>
+      </div>
+      <div class="card today-quick-card">
+        <div class="today-card-title">quick things</div>
+        <button class="today-quick" onclick="switchView('chat')">💬 Ask Friday anything</button>
+        <button class="today-quick" onclick="switchView('garden')">🌱 See my garden & insights</button>
+        <button class="today-quick" onclick="switchView('tasks')">🧩 Check tasks</button>
+      </div>
+    </div>`;
+  // active session ring tick
+  if (s) {
+    const tick = () => {
+      const left = Math.max(0, (s.start_ts + s.target_min * 60) - Date.now() / 1000);
+      const pct = Math.max(0, Math.min(1, 1 - left / (s.target_min * 60)));
+      const t = $("#today-mini-time"); if (t) t.textContent = bdFmt(left);
+      const ring = $("#today-ring-fg");
+      if (ring) ring.style.strokeDashoffset = (163.4 * (1 - pct)).toFixed(1);
+    };
+    tick();
+    if (!state.todayTimer) state.todayTimer = setInterval(tick, 1000);
+  } else if (state.todayTimer) { clearInterval(state.todayTimer); state.todayTimer = null; }
+  const go = $("#today-start");
+  if (go) go.addEventListener("click", () => switchView("focus"));
+  // plan interactions
+  const input = $("#today-plan-input");
+  const add = $("#today-plan-go");
+  const savePlan = async (newItems) => {
+    await api("/api/focus/plan", { method: "POST", body: JSON.stringify({ items: newItems }) });
+    loadToday();
+  };
+  if (add && input) {
+    const doAdd = () => {
+      const v = input.value.trim();
+      if (!v) return;
+      savePlan([...items, { text: v, done: false }]);
+    };
+    add.addEventListener("click", doAdd);
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") doAdd(); });
+  }
+  $$(".today-plan-check").forEach(b => b.addEventListener("click", () => {
+    const i = +b.closest(".today-plan-item").dataset.i;
+    const next = items.map((it, j) => j === i ? { ...it, done: !it.done } : it);
+    savePlan(next);
+  }));
+  $$(".today-plan-x").forEach(b => b.addEventListener("click", () => {
+    const i = +b.closest(".today-plan-item").dataset.i;
+    savePlan(items.filter((_, j) => j !== i));
+  }));
+}
+
+/* ============================== GARDEN & INSIGHTS ============================== */
+async function loadGarden() {
+  const host = $("#garden-host");
+  if (!host) return;
+  const stats = await api("/api/focus/stats");
+  const f = stats.focus || {};
+  const sessions = stats.sessions || [];
+  const scored = sessions.filter(s => s.focus_score != null).slice(0, 30).reverse();
+  const maxScore = Math.max(1, ...scored.map(s => s.focus_score || 0));
+  const scoreChart = scored.length ? scored.map(s => `
+    <div class="g-chart-col" title="${s.focus_score} · ${fmtDate(s.start_ts)}">
+      <div class="g-chart-bar" style="height:${Math.max(4, (s.focus_score / maxScore) * 100)}%"></div>
+      <span>${s.focus_score}</span>
+    </div>`).join("") : `<div class="dim">no scored sessions yet</div>`;
+  const thoughts = sessions.filter(s => s.thoughts).slice(0, 10);
+  const journal = sessions.slice(0, 12).map(s => {
+    const mins = Math.round(((s.end_ts || Date.now() / 1000) - s.start_ts) / 60);
+    return `<div class="g-journal-row">
+      <span class="chip ${s.status}">${esc(s.status)}</span>
+      <span>${fmtDate(s.start_ts)}</span>
+      <span><b>${mins}</b>/${s.target_min}m</span>
+      <span class="dim">drifts ${s.drift_count} · comebacks ${s.comebacks || 0}</span>
+      ${s.focus_score != null ? `<span class="chip good">${s.focus_score}</span>` : ""}
+      ${s.task ? `<span class="dim">· ${esc(s.task)}</span>` : ""}
+      ${s.notes ? `<span class="dim">· “${esc(s.notes)}”</span>` : ""}
+    </div>`;
+  }).join("");
+  host.innerHTML = `
+    <div class="g-head">
+      <div class="g-garden-big">${bdGarden(stats)}</div>
+      <div class="g-stats">
+        <div class="ov-tile"><div class="v">${stats.total_completed || 0}</div><div class="l">sessions</div></div>
+        <div class="ov-tile"><div class="v">${f.best_score || 0}</div><div class="l">best score</div></div>
+        <div class="ov-tile"><div class="v">${f.avg_score || 0}</div><div class="l">avg score</div></div>
+        <div class="ov-tile"><div class="v">${stats.streak_days || 0}<small>d</small></div><div class="l">streak</div></div>
+        <div class="ov-tile"><div class="v">${f.avg_energy || 0}<small>/5</small></div><div class="l">avg energy</div></div>
+        <div class="ov-tile"><div class="v">${f.energy_delta > 0 ? "+" : ""}${f.energy_delta || 0}</div><div class="l">energy delta</div></div>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Focus scores — last ${scored.length || 0}</h3>
+      <div class="g-chart">${scoreChart}</div>
+      <div class="dim" style="font-size:11.5px;margin-top:8px">
+        ${f.best_hour != null ? `⏰ best hour <b>${f.best_hour}:00</b> (${f.best_hour_min}m focused there)` : ""}
+        ${(stats.learned && stats.learned.top_distraction_domains || []).length ? ` · top distractions: ${stats.learned.top_distraction_domains.map(esc).join(", ")}` : ""}
+        ${(stats.learned && stats.learned.peak_hours || []).length ? ` · drift peaks: ${stats.learned.peak_hours.map(h => h + ":00").join(", ")}` : ""}
+      </div>
+    </div>
+    ${thoughts.length ? `<div class="card"><h3>🧠 Thought bank</h3>${thoughts.map(s => `
+      <div class="g-thoughts"><div class="dim" style="font-size:10.5px">${fmtDate(s.start_ts)}${s.task ? " · " + esc(s.task) : ""}</div>
+      ${(s.thoughts || "").split("\n").map(t => `<div class="g-thought">${esc(t)}</div>`).join("")}</div>`).join("")}</div>` : ""}
+    <div class="card"><h3>Journal</h3>${journal || `<div class="dim">no sessions yet — your journal starts with the first seed 🌱</div>`}</div>`;
+}
+
 /* sidebar + header quick entry points */
 $("#side-focus-quick")?.addEventListener("click", () => { switchView("focus"); });
 $("#header-focus-btn")?.addEventListener("click", () => { switchView("focus"); });
 $("#focus-refresh")?.addEventListener("click", () => loadFocus());
+$("#garden-refresh")?.addEventListener("click", () => loadGarden());
 
 /* ============================== books panel ============================== */
 $("#book-file").addEventListener("change", async (e) => {
@@ -2025,7 +2211,7 @@ $("#theme-toggle").addEventListener("click", async () => {
   // restore previous chats and preload every panel — a hard refresh must show
   // everything immediately, no empty panels until you click them
   restoreChat();
-  Promise.all([loadTasks(), loadMemory(), loadFocus(), loadBooks(), loadAdmin()]).catch(() => {});
+  Promise.all([loadToday(), loadTasks(), loadMemory(), loadFocus(), loadBooks(), loadAdmin()]).catch(() => {});
   setInterval(async () => {           // keep focus state fresh for the sensor
     try {
       const a = await api("/api/focus/active");

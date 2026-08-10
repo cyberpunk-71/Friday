@@ -738,6 +738,27 @@ async def focus_comeback():
     return Focus(get_db()).add_comeback()
 
 
+@app.get("/api/focus/plan")
+async def focus_plan_get():
+    """Today's focus plan (up to 5 intentions) — stored per date."""
+    db = get_db()
+    today = time.strftime("%Y-%m-%d")
+    raw = db.get_setting("focus.plan", {})
+    if not isinstance(raw, dict) or raw.get("date") != today:
+        return {"date": today, "items": []}
+    return {"date": today, "items": raw.get("items", [])}
+
+
+@app.post("/api/focus/plan")
+async def focus_plan_set(payload: dict):
+    """Set today's plan: {items: [{text, done}]}."""
+    db = get_db()
+    items = [{"text": str(i.get("text", ""))[:120], "done": bool(i.get("done"))}
+             for i in (payload.get("items") or [])][:5]
+    db.set_setting("focus.plan", {"date": time.strftime("%Y-%m-%d"), "items": items})
+    return {"ok": True, "items": items}
+
+
 @app.post("/api/focus/mode")
 async def focus_mode(payload: dict):
     """work ↔ break toggle (pomodoro). During break, drifts are not nudged."""

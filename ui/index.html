@@ -4,7 +4,7 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Friday–Δ</title>
-<link rel="stylesheet" href="/static/style.css?v=3.5.2"/>
+<link rel="stylesheet" href="/static/style.css?v=3.6.0"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%23ff7849'/><stop offset='1' stop-color='%23ff5e3a'/></linearGradient></defs><rect x='8' y='8' width='84' height='84' rx='22' fill='url(%23g)'/><text x='50' y='68' font-size='52' text-anchor='middle' fill='white' font-family='Georgia,serif'>Δ</text></svg>"/>
 </head>
 <body>
@@ -21,10 +21,12 @@
     </div>
 
     <nav id="nav">
-      <button class="nav-item active" data-view="chat"><span class="n-ico">✦</span><span class="n-label">Chat</span></button>
+      <button class="nav-item active" data-view="today"><span class="n-ico">🏠</span><span class="n-label">Today</span></button>
+      <button class="nav-item" data-view="chat"><span class="n-ico">✦</span><span class="n-label">Chat</span></button>
+      <button class="nav-item hero-nav" data-view="focus"><span class="n-ico">◎</span><span class="n-label">Focus Studio</span></button>
+      <button class="nav-item" data-view="garden"><span class="n-ico">🌱</span><span class="n-label">Garden & Insights</span></button>
       <button class="nav-item" data-view="tasks"><span class="n-ico">◫</span><span class="n-label">Tasks</span></button>
       <button class="nav-item" data-view="memory"><span class="n-ico">◍</span><span class="n-label">Memory</span></button>
-      <button class="nav-item" data-view="focus"><span class="n-ico">◎</span><span class="n-label">Focus</span></button>
       <button class="nav-item" data-view="books"><span class="n-ico">▤</span><span class="n-label">Books</span></button>
       <button class="nav-item" data-view="admin"><span class="n-ico">⚙</span><span class="n-label">Admin</span></button>
     </nav>
@@ -70,15 +72,20 @@
         <div id="sys-status" class="dim">loading…</div>
         <div class="sys-row">
           <button id="theme-toggle" class="mini-btn" title="Toggle light/dark">◐ Theme</button>
-          <div id="ui-version" class="dim">UI v3.5.2 · core 0.1.0</div>
+          <div id="ui-version" class="dim">UI v3.6.0 · core 0.1.0</div>
         </div>
       </div>
     </div>
   </aside>
 
   <main id="main">
+    <!-- ============ TODAY — the sanctuary landing ============ -->
+    <section id="view-today" class="view active">
+      <div id="today-host" class="today-scroll"></div>
+    </section>
+
     <!-- ============ CHAT ============ -->
-    <section id="view-chat" class="view active">
+    <section id="view-chat" class="view">
       <div id="chat-header">
         <div id="chat-title">Friday<small>Δ</small></div>
         <div id="status-pill"><span class="live-dot"></span><span id="status-text">live</span></div>
@@ -161,6 +168,14 @@
         </div>
       </div>
       <div id="bd-host" class="bd-scroll"></div>
+    </section>
+
+    <!-- ============ GARDEN & INSIGHTS ============ -->
+    <section id="view-garden" class="view">
+      <div class="panel-head"><h2>Garden & Insights</h2>
+        <div class="panel-actions"><button id="garden-refresh" class="btn ghost">⟳ refresh</button></div>
+      </div>
+      <div id="garden-host" class="garden-scroll"></div>
     </section>
 
     <!-- ============ BOOKS ============ -->
@@ -320,6 +335,6 @@
 <div id="toast-stack"></div>
 <div id="chrome-modal" class="hidden"><div id="chrome-modal-box"></div></div>
 
-<script src="/static/app.js?v=3.5.2"></script>
+<script src="/static/app.js?v=3.6.0"></script>
 </body>
 </html>
