@@ -46,3 +46,14 @@ The first released version of Friday–Δ. Focus is the flagship feature.
 - Auto-expiring focus sessions; worker-independent correctness.
 - Genome mutation fix (only applicable mutations chosen).
 - 175+ offline tests; 50-scenario eval suite (203 prompts).
+
+## v1.1.0-alpha — Friday Focus (dedicated focus website)
+
+- New `focusapp/` — a slim, clean, standalone body-doubling website:
+  Focus (ritual plan → phase timer → coach → brain dump → celebration),
+  History (garden, scores, thought bank, journal), Settings (LLM keys,
+  model, theme, sound).
+- Reuses the core focus engine; LLMs kept for the Focus Coach.
+- VM: `friday_focus_deploy` op removes unneeded v1 components from
+  `/opt/friday` (extension, tests, old UI, genome, books, worker) while
+  keeping the focus history DB and the tunnel. Other VM projects untouched.

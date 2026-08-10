@@ -740,12 +740,68 @@ PY
   ok friday_gemstream
 }
 
+
+op_friday_focus_deploy() {
+  log friday_focus_deploy
+  if [ ! -d "$WS/focusapp" ]; then fail friday_focus_deploy; say "no focusapp in workspace"; return; fi
+  say "workspace: $WS"
+  sudo mkdir -p "$RUNTIME"
+  sudo chown -R "$(whoami)" "$RUNTIME"
+  # ---- remove everything the OLD full Friday needed that Friday Focus does NOT ----
+  say "removing unneeded v1 components from /opt/friday (extension, tests, old ui, genome, books artifacts, eval reports)"
+  rm -rf "$RUNTIME/extension" "$RUNTIME/tests" "$RUNTIME/ui" "$RUNTIME/genome" \
+         "$RUNTIME/books" "$RUNTIME/data/books" "$RUNTIME/data/eval_report" \
+         "$RUNTIME/data/artifacts" "$RUNTIME/core/books.py" "$RUNTIME/core/hands.py" \
+         "$RUNTIME/core/tools.py" "$RUNTIME/core/voice.py" "$RUNTIME/core/worker.py" \
+         "$RUNTIME/core/extension" 2>/dev/null || true
+  # ---- copy only what Friday Focus needs ----
+  rm -rf "$RUNTIME/focusapp" "$RUNTIME/core" "$RUNTIME/configs" "$RUNTIME/scripts" \
+         "$RUNTIME/infra" "$RUNTIME/requirements.txt" "$RUNTIME/run_focus.py" \
+         "$RUNTIME/run.py" "$RUNTIME/.env.example" 2>/dev/null || true
+  cp -a "$WS/focusapp" "$WS/core" "$WS/configs" "$WS/scripts" "$WS/infra" \
+        "$WS/requirements.txt" "$WS/run_focus.py" "$WS/.env.example" "$RUNTIME"/ 2>&1 | tail -3
+  # keep only the modules the focus server imports (defensive: remove the rest)
+  rm -f "$RUNTIME/core/books.py" "$RUNTIME/core/hands.py" "$RUNTIME/core/tools.py" \
+        "$RUNTIME/core/voice.py" "$RUNTIME/core/worker.py" "$RUNTIME/core/extract.py" \
+        "$RUNTIME/core/pptx_min.py" "$RUNTIME/core/skills.py" "$RUNTIME/core/obs.py" 2>/dev/null || true
+  rm -rf "$RUNTIME/core/__pycache__" "$RUNTIME/focusapp/ui/__pycache__" 2>/dev/null || true
+  # keep the DB (focus history + keys) and tunnel_url — delete nothing else in data/
+  say "code copied: $(ls "$RUNTIME" | tr '\n' ' ')"
+  # ---- venv ----
+  if [ ! -d "$RUNTIME/.venv" ]; then
+    command -v python3-venv >/dev/null 2>&1 || pkg_install python3-venv python3-pip 2>/dev/null || true
+    python3 -m venv "$RUNTIME/.venv" 2>&1 | tail -1 || true
+  fi
+  "$RUNTIME/.venv/bin/pip" install -q --upgrade pip 2>&1 | tail -1 || true
+  for attempt in 1 2 3; do
+    if "$RUNTIME/.venv/bin/pip" install -q -r "$RUNTIME/requirements.txt" 2>&1 | tail -2; then break; fi
+    say "pip attempt $attempt failed — retry"; sleep 5
+  done
+  "$RUNTIME/.venv/bin/python" -c "import fastapi, uvicorn; print('imports OK')" 2>&1 | tail -1
+  # ---- units: stop old Friday, install Friday Focus ----
+  sudo systemctl stop friday-core friday-worker 2>/dev/null || true
+  sudo systemctl disable friday-core friday-worker 2>/dev/null || true
+  sudo cp "$WS/infra/systemd/friday-focus.service" /etc/systemd/system/friday-focus.service
+  sudo systemctl daemon-reload
+  sudo systemctl enable friday-focus 2>/dev/null
+  sudo systemctl restart friday-focus
+  if wait_health; then
+    say "friday_focus_health=http://127.0.0.1:${PORT}/api/health -> 200"
+    ok friday_focus_deploy
+  else
+    say "health failed; journal:"
+OUT="${OUT}$( sudo journalctl -u friday-focus -n 25 --no-pager 2>/dev/null | tail -25 )\n"
+    fail friday_focus_deploy
+  fi
+}
+
 case "$CMD" in
   friday_setup)       run_ops friday_setkey friday_netcheck friday_deploy friday_test friday_nginx ;;
   friday_setkey)      run_ops friday_setkey ;;
   friday_deploy)      run_ops friday_deploy friday_test friday_nginx ;;
   friday_health)      run_ops friday_health ;;
   friday_uidiff)      run_ops friday_uidiff ;;
+  friday_focus_deploy) run_ops friday_focus_deploy ;;
   friday_llmfix)      run_ops friday_llmfix ;;
   friday_gemtest)     run_ops friday_gemtest ;;
   friday_gemon)       run_ops friday_gemon ;;

@@ -127,6 +127,24 @@ Friday/
     └── OPERATIONS.md       VM ops, troubleshooting
 ```
 
+## Friday Focus — the dedicated focus website
+
+`focusapp/` is a **slim, standalone body-doubling website** that reuses the
+core focus engine: only sessions, the Focus Coach, brain-dump, garden,
+history and settings — none of the full app's sprawl. It runs on its own
+port (`run_focus.py`, default 8010) and is what the reference VM deploys
+as the primary product (`friday-focus.service`).
+
+```
+focusapp/
+├── server.py    slim FastAPI — focus endpoints + coach + settings
+└── ui/          the clean 3-view site (Focus · History · Settings)
+```
+
+Deploy with the `friday_focus_deploy` VM op — it removes the old full
+Friday's unneeded components (extension, tests, old UI, books, worker)
+from `/opt/friday` while **keeping your focus history DB**.
+
 ## Quick start
 
 ```bash
