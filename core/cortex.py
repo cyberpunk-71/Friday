@@ -160,15 +160,66 @@ def _drop_dump_tables(t: str) -> str:
     return TABLE_BLOCK_RE.sub(_drop_dump, t)
 
 
+# the model sometimes re-emits a {"ctrl":{...}} block MID-STREAM (after the
+# real leading one) — strip any such block anywhere in the reply
+MID_CTRL_START = re.compile(r'\{\s*"ctrl"\s*:')
+
+
+def strip_mid_ctrl(text: str) -> str:
+    """Remove {"ctrl":{...}} JSON blocks that appear anywhere in the text
+    (not just at the start) using a balanced-brace scan."""
+    out: list[str] = []
+    pos = 0
+    n = len(text)
+    for m in MID_CTRL_START.finditer(text):
+        start = m.start()
+        out.append(text[pos:start])
+        depth = 0
+        in_str = False
+        esc = False
+        j = start
+        while j < n:
+            ch = text[j]
+            if in_str:
+                if esc:
+                    esc = False
+                elif ch == "\\":
+                    esc = True
+                elif ch == '"':
+                    in_str = False
+            else:
+                if ch == '"':
+                    in_str = True
+                elif ch == "{":
+                    depth += 1
+                elif ch == "}":
+                    depth -= 1
+                    if depth == 0:
+                        break
+            j += 1
+        if depth == 0:
+            pos = j + 1
+        else:
+            out.append(text[start:])
+            pos = n
+            break
+    else:
+        out.append(text[pos:])
+    return "".join(out)
+
+
 def polish_reply(reply: str) -> str:
     """Post-generation safety net so the USER never sees the model's slips:
-    robotic meta-headers, 'FRIDAY' name openers, --- dividers, and dump-tables
-    of search results. Content is kept — only the bot-y furniture is removed."""
+    robotic meta-headers, 'FRIDAY' name openers, --- dividers, dump-tables
+    of search results, and mid-reply ctrl JSON. Content is kept — only the
+    bot-y furniture is removed."""
     if not reply:
         return reply
     t = reply
     # leading self-name header ("**FRIDAY**" / "FRIDAY:\n") — never show it
     t = LEADING_NAME_RE.sub("", t, count=1)
+    # mid-reply ctrl blocks (model compliance slip mid-stream)
+    t = strip_mid_ctrl(t)
     # robotic meta-header lines (case-insensitive, md or bold variants)
     t = BANNED_HEADER_LEAD_RE.sub("", t)
     t = BANNED_HEADER_RE.sub("", t)

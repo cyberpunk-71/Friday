@@ -525,3 +525,21 @@ def test_double_failure_terminates_with_sim(cortex, db, monkeypatch):
     events = collect(c.turn("ping"))
     done = next(e for e in events if e["type"] == "done")
     assert done["model"] in ("sim", "sim-fallback")   # terminated, no hang
+
+
+def test_polish_strips_mid_reply_ctrl():
+    """The model sometimes re-emits {"ctrl":{...}} MID-reply (seen live:
+    '...about 1{"ctrl":...}Hey! Still here'). polish_reply must remove it
+    anywhere in the text, not just at the start."""
+    from core.cortex import polish_reply
+    text = ('Still here, and you have got about 1'
+            '{"ctrl":{"depth":0.05,"tooliness":0.0,"config_deltas":{},'
+            '"memory_writes":[],"code_intent":false,"ask":[]}}'
+            'Hey! Still here')
+    out = polish_reply(text)
+    assert '"ctrl"' not in out
+    assert "Still here" in out
+    assert "Hey!" in out
+    # nested braces + strings with braces inside are handled
+    out2 = polish_reply('a {"ctrl":{"config_deltas":{"focus.nudge_cooldown_min":30},"ask":["why {x}?"]}} b')
+    assert '"ctrl"' not in out2 and out2.strip() == "a  b"
