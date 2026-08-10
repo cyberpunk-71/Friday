@@ -259,14 +259,20 @@ if not row or not row["api_key"]:
 key = row["api_key"]
 print("key prefix:", key[:6], "len:", len(key))
 p = GeminiProvider(api_key=key)
+from core.providers import GEMINI_MODELS
 async def go():
-    for auth in ("key", "bearer"):
-        try:
-            out = await p.complete([{"role": "user", "content": "say hi"}], max_tokens=10)
-            print(f"auth={auth} OK -> {out[:60]!r}")
-            return
-        except Exception as e:
-            print(f"auth={auth} FAIL -> {str(e)[:220]}")
+    ok_any = False
+    for m in [p.model] + [x for x in GEMINI_MODELS if x != p.model]:
+        for auth in ("key", "bearer"):
+            try:
+                out = await p.complete([{"role": "user", "content": "say hi in 3 words"}],
+                                       max_tokens=30, model=m)
+                print(f"model={m} auth={auth} OK -> {out[:60]!r}")
+                ok_any = True
+                return
+            except Exception as e:
+                print(f"model={m} auth={auth} FAIL -> {str(e)[:140]}")
+    print("ALL FAILED" if not ok_any else "")
 asyncio.get_event_loop().run_until_complete(go())
 PY
 )\n"
