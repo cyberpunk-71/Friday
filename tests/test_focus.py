@@ -198,3 +198,71 @@ def test_now_block_reports_llm_identity(db):
     assert "llm" in nb
     assert nb["llm"]["provider"] in ("sim", "deepseek", "gemini")
     assert isinstance(nb["llm"]["model"], str)
+
+
+def test_focus_start_rich_intake(db):
+    """Flagship intake: energy, mood, distraction pre-commit persist."""
+    from core.focus import Focus
+    f = Focus(db)
+    r = f.start(30, allow=[], task="write report", why="then chai",
+                first_step="open doc", energy=4, mood=5,
+                distraction_plan="when I want to check insta, I'll drink water")
+    assert r["ok"]
+    s = f.active()
+    assert s["energy"] == 4 and s["mood"] == 5
+    assert "insta" in s["distraction_plan"]
+    f.stop()
+
+
+def test_focus_thought_capture(db):
+    """Brain-dump capture appends to the session (working-memory offload)."""
+    from core.focus import Focus
+    f = Focus(db)
+    f.start(25, allow=[], task="build ui")
+    r1 = f.add_thought("reply to mom")
+    assert r1["ok"] and "reply to mom" in r1["thoughts"]
+    r2 = f.add_thought("buy milk")
+    assert r2["thoughts"] == "reply to mom\nbuy milk"
+    # no active session → graceful
+    f.stop()
+    assert f.add_thought("x")["ok"] is False
+
+
+def test_focus_comeback_and_score(db):
+    """Comebacks count; finish() computes the FOCUS SCORE + rich summary."""
+    from core.focus import Focus
+    f = Focus(db)
+    f.start(25, allow=[], task="agent", why="episode", first_step="open",
+            energy=3, mood=4)
+    sid = f.active()["session_id"]
+    f.add_comeback()
+    f.add_comeback()
+    # backdate 20 of 25 min → completed, near-full completion
+    db.exec("UPDATE focus_sessions SET start_ts=? WHERE session_id=?",
+            (time.time() - 20 * 60, sid))
+    r = f.finish(energy_after=2, mood_after=5, notes="great session")
+    assert r["ok"] and r["status"] == "completed"
+    assert 60 <= r["focus_score"] <= 100
+    assert r["comebacks"] == 2
+    assert r["energy_before"] == 3 and r["mood_after"] == 5
+    assert r["task"] == "agent" and "great" in r["notes"]
+    row = db.q1("SELECT * FROM focus_sessions WHERE session_id=?", (sid,))
+    assert row["focus_score"] == r["focus_score"]
+    assert row["status"] == "completed"
+
+
+def test_focus_stats_flagship_analytics(db):
+    """stats() exposes avg/best focus score, series, best hour, energy."""
+    from core.focus import Focus
+    f = Focus(db)
+    f.start(25, allow=[], task="a", energy=4, mood=3)
+    db.exec("UPDATE focus_sessions SET start_ts=? WHERE session_id=?",
+            (time.time() - 20 * 60, f.active()["session_id"]))
+    f.finish(mood_after=4)
+    st = f.stats()
+    assert st["focus"]["avg_score"] > 0
+    assert st["focus"]["best_score"] >= st["focus"]["avg_score"]
+    assert st["focus"]["series"], "score series must be non-empty"
+    assert st["focus"]["avg_energy"] == 4.0
+    assert st["focus"]["total_thoughts"] == 0
+    assert "best_hour" in st["focus"]

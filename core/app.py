@@ -705,12 +705,37 @@ async def focus_start(payload: dict):
                                  payload.get("voice", True),
                                  payload.get("task") or None,
                                  payload.get("why") or None,
-                                 payload.get("first_step") or None)
+                                 payload.get("first_step") or None,
+                                 payload.get("energy"),
+                                 payload.get("mood"),
+                                 payload.get("distraction_plan") or None)
 
 
 @app.post("/api/focus/stop")
-async def focus_stop():
+async def focus_stop(payload: Optional[dict] = None):
+    """Plain stop (kept for compat with the old panel)."""
     return Focus(get_db()).stop()
+
+
+@app.post("/api/focus/finish")
+async def focus_finish(payload: dict):
+    """Flagship end-of-session: after-check-in (energy/mood), notes, and the
+    computed FOCUS SCORE + celebration summary."""
+    return Focus(get_db()).finish(payload.get("energy_after"),
+                                  payload.get("mood_after"),
+                                  payload.get("notes") or None)
+
+
+@app.post("/api/focus/thought")
+async def focus_thought(payload: dict):
+    """Brain-dump capture during a session — 'I'll hold this for you'."""
+    return Focus(get_db()).add_thought(payload.get("text") or "")
+
+
+@app.post("/api/focus/comeback")
+async def focus_comeback():
+    """A drift followed by returning to work — celebrated, counted."""
+    return Focus(get_db()).add_comeback()
 
 
 @app.post("/api/focus/mode")
