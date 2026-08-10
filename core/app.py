@@ -378,10 +378,19 @@ async def providers_test(payload: Optional[dict] = None, _: bool = Depends(_admi
     from .providers import DeepSeekProvider, GeminiProvider
     provider = (payload.get("provider") if payload else None) or "deepseek"
     db = get_db()
+
+    def _saved_key(prov: str) -> str:
+        """DB row is a dict — extract the api_key string (passing the row
+        straight into a provider made httpx die with 'Header value must be
+        str or bytes, not dict')."""
+        row = db.q1("SELECT api_key FROM provider_keys WHERE provider=? "
+                    "AND scope='default' AND active=1 ORDER BY updated_ts DESC LIMIT 1",
+                    (prov,))
+        return (row or {}).get("api_key") or ""
+
     if provider == "gemini":
         key = ((payload.get("api_key") if payload else None)
-               or db.q1("SELECT api_key FROM provider_keys WHERE provider='gemini' "
-                        "AND scope='default' AND active=1 ORDER BY updated_ts DESC LIMIT 1")
+               or _saved_key("gemini")
                or os.environ.get("GEMINI_API_KEY", ""))
         if not key:
             return {"ok": False, "error": "no Gemini key — add it in Models & Keys first"}
@@ -389,8 +398,7 @@ async def providers_test(payload: Optional[dict] = None, _: bool = Depends(_admi
         tag = "Gemini"
     else:
         key = ((payload.get("api_key") if payload else None)
-               or db.q1("SELECT api_key FROM provider_keys WHERE provider='deepseek' "
-                        "AND scope='default' AND active=1 ORDER BY updated_ts DESC LIMIT 1")
+               or _saved_key("deepseek")
                or os.environ.get("DEEPSEEK_API_KEY", ""))
         if not key:
             return {"ok": False, "error": "no key configured — set it in Models & Keys or tell Friday in chat"}

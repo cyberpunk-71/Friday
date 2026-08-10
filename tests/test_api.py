@@ -295,3 +295,24 @@ def test_overview_marks_chat_provider_key(client, db):
     ov = client.get("/api/admin/overview").json()
     by_prov = {k["provider"]: k["is_chat"] for k in ov["provider_keys"]}
     assert by_prov == {"deepseek": False, "gemini": True}
+
+
+def test_providers_test_uses_saved_db_key_without_crashing(client, db):
+    """Regression: pressing Test with an empty key field must fall back to the
+    DB-saved key as a STRING — passing the sqlite row (a dict) straight into
+    the provider made httpx throw 'Header value must be str or bytes, not
+    dict'."""
+    db.exec("INSERT INTO provider_keys(provider,scope,api_key,active,source,created_ts,updated_ts)"
+            " VALUES('gemini','default','AIza-abc1234567890',1,'admin',?,?)", (1, 1))
+    # no api_key in the payload → falls back to the saved row
+    r = client.post("/api/admin/providers/test", json={"provider": "gemini"})
+    assert r.status_code == 200
+    body = r.json()
+    assert "ok" in body  # either live ok, or a categorized error — never a 500/TypeError
+    assert "Header value" not in str(body)
+    # deepseek path too
+    db.exec("INSERT INTO provider_keys(provider,scope,api_key,active,source,created_ts,updated_ts)"
+            " VALUES('deepseek','default','sk-abc1234567890',1,'admin',?,?)", (1, 1))
+    r2 = client.post("/api/admin/providers/test", json={"provider": "deepseek"})
+    assert r2.status_code == 200
+    assert "Header value" not in str(r2.json())
