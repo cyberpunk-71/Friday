@@ -350,3 +350,17 @@ def test_focus_plan_api(client, db):
     r3 = client.get("/api/focus/plan").json()
     assert r3["items"][0]["text"] == "write the agent UI"
     assert r3["items"][1]["done"] is True
+
+
+def test_focus_coach_streams_reply(client, db):
+    """The Focus Coach endpoint streams an SSE reply with session context."""
+    # no session → coach still replies about today
+    with client.stream("POST", "/api/focus/coach", json={"message": "I'm stuck"}) as r:
+        events = _sse_events(r.read().decode())
+    types = [e["type"] for e in events]
+    assert "delta" in types and "done" in types
+    done = next(e for e in events if e["type"] == "done")
+    assert done["reply"]
+    # empty message rejected
+    r2 = client.post("/api/focus/coach", json={"message": "   "})
+    assert r2.status_code == 400

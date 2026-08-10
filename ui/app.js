@@ -1145,6 +1145,100 @@ function bdRestoreInputs(snap) {
   });
 }
 
+/* ============================== FOCUS COACH — conversational body double ============================== */
+state.focus.coach = [];          // coach chat history [{role, text}]
+state.focus.coachTab = "log";    // "coach" | "log"
+
+const COACH_CHIPS = [
+  "I'm stuck",
+  "Give me a 2-minute version",
+  "Why am I doing this?",
+  "I want to quit",
+  "What's next?",
+];
+
+async function sendCoach(text) {
+  text = (text || "").trim();
+  if (!text) return;
+  state.focus.coach.push({ role: "user", text });
+  state.focus.coachTab = "coach";
+  renderCoachPanel();
+  const input = $("#bd-coach-input");
+  if (input) input.value = "";
+  // typing bubble
+  const box = $("#bd-coach-messages");
+  if (!box) return;
+  const typing = document.createElement("div");
+  typing.className = "coach-msg coach-friday";
+  typing.innerHTML = `<span class="coach-bubble"><span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span></span>`;
+  box.appendChild(typing);
+  box.scrollTop = box.scrollHeight;
+  let reply = "";
+  try {
+    const res = await fetch("/api/focus/coach", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: text }),
+    });
+    if (!res.ok || !res.body) throw new Error("coach " + res.status);
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value || new Uint8Array(), { stream: !done });
+      let i;
+      while ((i = buf.indexOf("\n\n")) >= 0) {
+        const chunk = buf.slice(0, i); buf = buf.slice(i + 2);
+        for (const line of chunk.split("\n")) {
+          if (!line.startsWith("data:")) continue;
+          let ev; try { ev = JSON.parse(line.slice(5)); } catch (e) { continue; }
+          if (ev.type === "delta") {
+            reply += ev.text;
+            typing.querySelector(".coach-bubble").textContent = reply;
+            box.scrollTop = box.scrollHeight;
+          }
+        }
+      }
+    }
+  } catch (e) {
+    reply = "I'm right here. Smallest next step: do the first two minutes of your task, then come back.";
+    typing.querySelector(".coach-bubble").textContent = reply;
+  }
+  state.focus.coach.push({ role: "friday", text: reply });
+  typing.remove();
+  renderCoachPanel();
+}
+
+function renderCoachPanel() {
+  const box = $("#bd-coach-messages");
+  if (!box) return;
+  box.innerHTML = state.focus.coach.map(m =>
+    `<div class="coach-msg ${m.role === "user" ? "coach-you" : "coach-friday"}"><span class="coach-bubble">${esc(m.text)}</span></div>`
+  ).join("") || `<div class="coach-empty dim">I'm right here with you — stuck, tired, distracted, or just checking in, tell me.</div>`;
+  box.scrollTop = box.scrollHeight;
+}
+
+function wireCoachPanel(host) {
+  const send = $("#bd-coach-send");
+  const input = $("#bd-coach-input");
+  if (send && input) {
+    const doSend = () => sendCoach(input.value);
+    send.addEventListener("click", doSend);
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") doSend(); });
+  }
+  $$(".bd-coach-chip", host).forEach(c => c.addEventListener("click", () => sendCoach(c.dataset.q)));
+  $$(".bd-tab").forEach(t => t.addEventListener("click", () => {
+    $$(".bd-tab").forEach(x => x.classList.toggle("active", x === t));
+    const which = t.dataset.tab;
+    state.focus.coachTab = which;
+    $$(".bd-tab-pane").forEach(p => p.classList.toggle("hidden", p.id !== "bd-pane-" + which));
+    if (which === "log") renderCompanionLog();
+    if (which === "coach") renderCoachPanel();
+  }));
+}
+
 function renderFocusStudio(s, stats) {
   const host = $("#bd-host");
   if (!host) return;
@@ -1348,9 +1442,24 @@ function renderFocusStudio(s, stats) {
         </div>
       </div>
       <div class="bd-side">
-        <div class="card bd-log-card">
-          <h3>Friday's log</h3>
-          <div id="bd-log" class="bd-log"></div>
+        <div class="card bd-coach-card">
+          <div class="bd-tabs">
+            <button class="bd-tab ${state.focus.coachTab === "coach" ? "active" : ""}" data-tab="coach">💬 Coach</button>
+            <button class="bd-tab ${state.focus.coachTab === "log" ? "active" : ""}" data-tab="log">📜 Log</button>
+          </div>
+          <div id="bd-pane-coach" class="bd-tab-pane ${state.focus.coachTab === "coach" ? "" : "hidden"}">
+            <div id="bd-coach-messages" class="bd-coach-messages"></div>
+            <div class="bd-coach-chips">
+              ${COACH_CHIPS.map(c => `<button class="bd-coach-chip" data-q="${esc(c)}">${esc(c)}</button>`).join("")}
+            </div>
+            <div class="bd-coach-input-row">
+              <input id="bd-coach-input" type="text" placeholder="talk to your coach…" maxlength="300"/>
+              <button id="bd-coach-send" class="mini-btn primary">Send</button>
+            </div>
+          </div>
+          <div id="bd-pane-log" class="bd-tab-pane ${state.focus.coachTab === "log" ? "" : "hidden"}">
+            <div id="bd-log" class="bd-log"></div>
+          </div>
         </div>
         ${!onBreak ? `
         <div class="card bd-thought-card">
@@ -1402,7 +1511,9 @@ function renderFocusStudio(s, stats) {
   if (tsave) tsave.addEventListener("click", () => saveThought());
   const tinput = $("#bd-thought-input");
   if (tinput) tinput.addEventListener("keydown", (e) => { if (e.key === "Enter") saveThought(); });
+  wireCoachPanel(host);
   renderCompanionLog();
+  renderCoachPanel();
   bdRestoreInputs(snap);
 }
 
@@ -1593,7 +1704,15 @@ async function loadToday() {
         <button class="today-quick" onclick="switchView('garden')">🌱 See my garden & insights</button>
         <button class="today-quick" onclick="switchView('tasks')">🧩 Check tasks</button>
       </div>
-    </div>`;
+    </div>
+    ${(stats.today && stats.today.count) ? `
+    <div class="card today-review-card" style="max-width:720px;margin:0 auto 14px">
+      <div class="today-card-title">✨ day review</div>
+      <div class="dim" style="font-size:11.5px;margin:2px 0 8px">${stats.today.count} session${stats.today.count === 1 ? "" : "s"} today · ${Math.round(stats.today.minutes)}m · ${(stats.focus && stats.focus.total_thoughts) || 0} thought${(stats.focus && stats.focus.total_thoughts) === 1 ? "" : "s"} saved</div>
+      <button id="bd-review-day" class="btn ghost">✨ Reflect on my day</button>
+      <div id="bd-dayreview" class="bd-dayreview hidden"></div>
+    </div>` : ""}
+  </div>`;
   // active session ring tick
   if (s) {
     const tick = () => {
@@ -1633,9 +1752,56 @@ async function loadToday() {
     const i = +b.closest(".today-plan-item").dataset.i;
     savePlan(items.filter((_, j) => j !== i));
   }));
+  // day review — ask the focus coach to reflect on today
+  const review = $("#bd-review-day");
+  if (review) review.addEventListener("click", async () => {
+    const box = $("#bd-dayreview");
+    box.classList.remove("hidden");
+    box.innerHTML = `<div class="bd-dayreview-typing"><span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span></div>`;
+    try {
+      const res = await fetch("/api/focus/coach", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: "Give me a warm 3-line review of my focus day — what I did, how I did, and one kind suggestion for tomorrow." }),
+      });
+      if (!res.ok || !res.body) throw new Error("coach " + res.status);
+      const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = ""; let reply = "";
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value || new Uint8Array(), { stream: !done });
+        let i;
+        while ((i = buf.indexOf("\n\n")) >= 0) {
+          const chunk = buf.slice(0, i); buf = buf.slice(i + 2);
+          for (const line of chunk.split("\n")) {
+            if (!line.startsWith("data:")) continue;
+            let ev; try { ev = JSON.parse(line.slice(5)); } catch (e) { continue; }
+            if (ev.type === "delta") { reply += ev.text; box.innerHTML = `<p class="bd-dayreview-text">${md(reply)}</p>`; }
+          }
+        }
+      }
+      if (!reply) throw new Error("empty");
+    } catch (e) {
+      box.innerHTML = `<p class="bd-dayreview-text">You showed up today — that's the whole win. One gentle idea for tomorrow: one intention, tiny first step.</p>`;
+    }
+  });
 }
 
 /* ============================== GARDEN & INSIGHTS ============================== */
+/* gentle achievements — poetic, never shouty */
+function smallWins(stats) {
+  const f = stats.focus || {};
+  const wins = [];
+  if (stats.total_completed >= 1) wins.push(["🌱", "first seed", "the garden has begun"]);
+  if ((stats.streak_days || 0) >= 3) wins.push(["🔥", "3-day rhythm", "three days of showing up"]);
+  if ((stats.total_drifts || 0) > 0 && stats.total_drifts <= 86) wins.push(["🧡", "comeback heart", "you return to the work"]);
+  if ((f.total_thoughts || 0) >= 3) wins.push(["🧠", "thought keeper", "your brain is lighter"]);
+  if ((f.best_score || 0) >= 80) wins.push(["🏆", "focus legend", "an 80+ session"]);
+  if ((stats.week && stats.week.minutes || 0) >= 300) wins.push(["⏱", "five hours", "300 minutes in a week"]);
+  if ((stats.today && stats.today.count || 0) >= 3) wins.push(["🎯", "three in a day", "a full day of focus"]);
+  if ((stats.total_completed || 0) >= 10) wins.push(["🌳", "ten sessions", "a small forest"]);
+  return wins;
+}
+
 async function loadGarden() {
   const host = $("#garden-host");
   if (!host) return;
@@ -1662,9 +1828,12 @@ async function loadGarden() {
       ${s.notes ? `<span class="dim">· “${esc(s.notes)}”</span>` : ""}
     </div>`;
   }).join("");
+  const wins = smallWins(stats);
   host.innerHTML = `
     <div class="g-head">
       <div class="g-garden-big">${bdGarden(stats)}</div>
+      ${wins.length ? `<div class="g-wins">${wins.map(([e, t, d]) =>
+        `<div class="g-win" title="${esc(d)}"><span class="g-win-ico">${e}</span><div><b>${esc(t)}</b><div class="dim">${esc(d)}</div></div></div>`).join("")}</div>` : ""}
       <div class="g-stats">
         <div class="ov-tile"><div class="v">${stats.total_completed || 0}</div><div class="l">sessions</div></div>
         <div class="ov-tile"><div class="v">${f.best_score || 0}</div><div class="l">best score</div></div>

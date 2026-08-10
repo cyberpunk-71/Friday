@@ -958,3 +958,58 @@ table.data th { background: var(--card-2); font-size: 10px; text-transform: uppe
 .g-thought { font-size: 13px; padding: 2px 0; }
 .g-journal-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 8px 0; border-bottom: 1px dashed var(--line); font-size: 12.5px; }
 @media (max-width: 760px) { .today-grid { grid-template-columns: 1fr; } }
+
+/* ============================================================
+   FOCUS COACH — conversational body double
+   ============================================================ */
+.bd-coach-card { }
+.bd-tabs { display: flex; gap: 5px; margin-bottom: 10px; }
+.bd-tab {
+  flex: 1; background: var(--card-2); border: 1px solid var(--line); color: var(--ink-soft);
+  border-radius: 999px; padding: 6px 10px; font-size: 12px; font-weight: 700; cursor: pointer;
+  font-family: var(--sans); transition: all .14s;
+}
+.bd-tab:hover { border-color: var(--accent); color: var(--accent); }
+.bd-tab.active { background: var(--grad); border-color: transparent; color: #fff; }
+.bd-tab-pane { }
+.bd-coach-messages {
+  max-height: 230px; overflow-y: auto; display: flex; flex-direction: column; gap: 7px;
+  padding: 2px; margin-bottom: 8px;
+}
+.coach-msg { display: flex; }
+.coach-msg.coach-you { justify-content: flex-end; }
+.coach-bubble {
+  max-width: 88%; background: var(--card-2); border: 1px solid var(--line);
+  border-radius: 14px 14px 4px 14px; padding: 8px 12px; font-size: 12.8px; line-height: 1.5;
+}
+.coach-msg.coach-you .coach-bubble {
+  background: var(--grad-soft); border-color: var(--border2); border-radius: 14px 14px 14px 4px;
+}
+.coach-empty { font-size: 12px; padding: 4px 2px; line-height: 1.55; }
+.bd-coach-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
+.bd-coach-chip {
+  background: var(--card-2); border: 1px dashed var(--line-2); border-radius: 999px;
+  padding: 4px 10px; font-size: 11px; font-weight: 600; cursor: pointer; color: var(--ink-soft);
+  transition: all .13s; font-family: var(--sans);
+}
+.bd-coach-chip:hover { border-color: var(--accent); color: var(--accent); }
+.bd-coach-input-row { display: flex; gap: 7px; }
+.bd-coach-input-row input { flex: 1; min-width: 0; }
+
+/* day review */
+.bd-dayreview { margin-top: 10px; }
+.bd-dayreview-text {
+  font-family: var(--serif); font-style: italic; font-size: 14.5px; line-height: 1.7;
+  color: var(--ink-soft); border-left: 3px solid var(--accent); padding-left: 12px;
+}
+.bd-dayreview-typing { padding: 4px 0; }
+
+/* small wins */
+.g-wins { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-bottom: 12px; }
+.g-win {
+  display: flex; align-items: center; gap: 10px; background: var(--card);
+  border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; box-shadow: var(--shadow-card);
+}
+.g-win-ico { font-size: 20px; }
+.g-win b { font-size: 12.5px; }
+.g-win .dim { font-size: 10.5px; }
