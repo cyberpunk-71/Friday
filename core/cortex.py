@@ -195,7 +195,7 @@ class Cortex:
             "memory_recall": lambda args: self._tool_recall(args.get("query", "")),
         }
         try:
-            while rounds < 3:
+            while rounds < 2:
                 try:
                     res = await self.llm.complete_tools(messages, TOOL_SCHEMAS,
                                                         temperature=0.3)
