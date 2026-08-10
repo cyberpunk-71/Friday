@@ -175,7 +175,13 @@ function handleChatEvent(ev, typing) {
       if (!typing.isConnected) { typing = typingIndicator(); }
       const bubble = typing.querySelector(".bubble");
       if (!bubble) return;
-      streamingReply += ev.text;
+      // filter out raw ctrl JSON blocks that the model sometimes emits
+      let t = ev.text || "";
+      t = t.replace(/\{\s*"ctrl"\s*:[^}]*\}/g, "");
+      t = t.replace(/^```json\s*\{\"ctrl\"[\s\S]*?\}```/g, "");
+      t = t.replace(/^\{"ctrl":\{.*?\}\}/, "");
+      if (!t) return;
+      streamingReply += t;
       bubble.innerHTML = md(streamingReply);
       scrollChat();
       break;
@@ -216,7 +222,7 @@ function renderCard(card) {
     case "task_chip": html = `<div class="card"><h3>🧩 Jobs</h3><div class="card-row"><span class="chip">${card.jobs} job${card.jobs > 1 ? "s" : ""} running in background ▸</span><button class="mini-btn" onclick="switchView('tasks')">open Tasks</button></div></div>`; break;
     case "approvals": html = `<div class="card"><h3>🛡 Approvals</h3>` + (card.items || []).map(a => `<div class="card-row" style="margin:6px 0"><span class="chip warn">${esc(a.kind)}</span><b>${esc(a.title)}</b><button class="mini-btn primary" onclick="approveTask(${a.task_id})">Approve</button><button class="mini-btn bad" onclick="rejectTask(${a.task_id})">Reject</button></div>`).join("") + `</div>`; break;
     case "ask": html = `<div class="card"><h3>❓ One question</h3><p>${esc(card.question || "")}</p></div>`; break;
-    case "prefire": html = `<div class="card"><h3>⚡ Pre-fired</h3><div class="card-row"><span class="chip">${card.n} speculative results already in flight at t+0</span></div></div>`; break;
+    case "prefire": html = ""; break;  // silent — results are used, not announced
     case "belief": html = `<div class="card"><h3>🧠 Belief</h3><div class="card-row"><span class="chip alpha">α ${card.alpha}</span><span class="chip beta">β ${card.beta}</span><span class="chip">conf ${(card.confidence * 100).toFixed(0)}%</span></div><p style="margin-top:6px">${esc(card.statement)}</p><div class="card-row" style="margin-top:8px"><button class="mini-btn good" onclick="rateClaim(${card.claim_id},'up')">👍</button><button class="mini-btn bad" onclick="rateClaim(${card.claim_id},'down')">👎</button><button class="mini-btn" onclick="editClaim(${card.claim_id})">✎ edit</button></div></div>`; break;
     case "undo": html = `<div class="card"><div class="card-row"><span class="chip good">✓ reversible</span><span class="undo-chip" onclick="undoLast(${card.task_id || 0})">↩ Undo ${card.seconds || 89}s</span></div></div>`; break;
     case "provider_key": html = `<div class="card"><h3>🔑 API key</h3><div class="card-row"><span class="chip good">${esc(card.scope)}</span><span class="chip">${esc(card.masked)}</span></div></div>`; break;

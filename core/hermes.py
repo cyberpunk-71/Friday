@@ -92,18 +92,25 @@ class Hermes:
         except Exception as e:
             pf.error = f"{type(e).__name__}: {str(e)[:200]} (q={q!r})"
         low = text.lower()
-        # events/movies/BookMyShow → also fetch the city's BMS events page so
-        # the model has REAL listings, not just news headlines
+        # movies/shows/events → fetch REAL listing pages with multiple URL
+        # fallbacks (BMS movies page, BMS events, cinemas) so one 404 never
+        # kills the feature
         if EVENT_HINTS.search(low):
-            try:
-                from .providers import web_read
-                pf.web = await web_read(f"https://in.bookmyshow.com/{city}/events", 6000)
-            except Exception:
-                pass
-            if not pf.web:
+            is_movie = bool(re.search(r"\b(movies?|film|cinema|showtimes?|pvr|inox|cinepolis|multiplex)\b", low))
+            for url in self._listing_urls(city, is_movie):
+                if pf.web:
+                    break
                 try:
                     from .providers import web_read
-                    pf.web = await web_read(f"https://www.bookmyshow.com/{city}/events", 6000)
+                    pf.web = await web_read(url, 6000)
+                except Exception:
+                    pass
+            if not pf.web:
+                # last resort: search for listings/news as text grounding
+                try:
+                    q3 = f"{city} {'movies today' if is_movie else 'events today'} showtimes"
+                    pf.search = await self.search.search(q3, 5)
+                    pf.burned_usd = 0.0001
                 except Exception:
                     pass
         # who-is / current-office-holder questions → Wikipedia via jina
@@ -120,6 +127,18 @@ class Hermes:
             except Exception:
                 pass
         return pf
+
+    @staticmethod
+    def _listing_urls(city: str, is_movie: bool) -> list[str]:
+        urls = [
+            f"https://in.bookmyshow.com/{city}/movies" if is_movie else f"https://in.bookmyshow.com/{city}/events",
+            f"https://www.bookmyshow.com/{city}/movies" if is_movie else f"https://www.bookmyshow.com/{city}/events",
+        ]
+        if is_movie:
+            urls += [f"https://in.bookmyshow.com/{city}/cinemas",
+                     "https://www.pvrcinemas.com/ahmedabad",
+                     "https://www.cinepolisindia.com/cinemas/ahmedabad"]
+        return urls
 
     @staticmethod
     def _fix_cities(t: str) -> str:
@@ -174,7 +193,12 @@ class Hermes:
                                            "kolkata", "jaipur", "surat", "goa"))
         if not has_city and EVENT_HINTS.search(t):
             t = f"{t} in {city}".strip()
-        if date_hint:
+        # movie queries search showtimes/today's listings
+        if re.search(r"\b(movies?|film|cinema|showtimes?)\b", tlow):
+            t = re.sub(r"\b(today|tonight|todays|today's|toda)\b", "", t)
+            t = re.sub(r"\s+", " ", t).strip()
+            t = f"movies showing today in {city}"
+        if date_hint and "showing today" not in t:
             t = f"{t} {date_hint}".strip()
         return t[:180]
 

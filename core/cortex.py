@@ -278,22 +278,24 @@ class Cortex:
             "- \"ahmedabad\" after \"events in ahmedabad\" means: the events in ahmedabad.\n"
             f"## SPECULATIVE PRE-FIRE (fetched at t+0 — real, current results)\n{prefire}\n"
             f"## PREFIRE WEB SNIPPET (live page content — cite it)\n{prefire_web[:4000]}\n"
-            "## LIVE-DATA RULE (mandatory)\n"
-            "- The SPECULATIVE PRE-FIRE section holds live search results fetched for "
-            "this query — REAL current data from Google News/TOI/Indian Express etc. "
-            "YOUR ANSWER MUST BE BUILT FROM THESE RESULTS. NEVER say \"I don't have "
-            "live access\", \"search came back empty\", or \"couldn't find listings\" "
-            "when the PRE-FIRE section has entries — that is a lie.\n"
-            "- The PRE-FIRE results may be imperfect (news articles, guides, not "
-            "ticketed listings). That's OK: LIST what you found with source + date, "
-            "note it's from news/guides rather than ticketed listings, and offer the "
-            "BookMyShow link. An honest summary of real results is ALWAYS better than "
-            "claiming nothing exists.\n"
-            "- If the user asks who is the mayor/CM/minister, the PRE-FIRE results "
-            "contain the name (e.g. Hitesh Barot, Ahmedabad mayor). Give the name "
-            "directly, with the source.\n"
-            "- If the PRE-FIRE section is EMPTY (literally empty) and the query needs "
-            "live data, THEN say you couldn't find live listings.\n"
+            "## LIVE DATA (mandatory)\n"
+            "- The sections labeled LIVE SEARCH RESULTS / PREFIRE WEB SNIPPET / "
+            "DEEP RESEARCH GROUNDING contain REAL data fetched seconds ago. Build "
+            "your answer from them. NEVER claim you lack data when they have entries.\n"
+            "- If a page 404'd or a search was thin, just answer from whatever IS "
+            "there — one line of context, then the answer. No apology essays.\n"
+            "- Local queries (movies, stores, events, food): give the best real "
+            "names/options the data supports. If ticketed showtimes genuinely aren't "
+            "in the data, say what IS known (cinemas in the city, typical timings) "
+            "and one concrete suggestion (e.g. 'BookMyShow app shows live showtimes').\n"
+            "## VOICE (mandatory — this is the most important rule)\n"
+            "- Reply like a smart, warm friend. Natural flowing prose. No 'The Honest "
+            "Answer', no 'What I Can Confirm', no robotic section headers, no bullet-"
+            "point menus for everything.\n"
+            "- First sentence = the direct answer. Then the useful detail. Short "
+            "bullets only for real comparisons. NEVER quote raw JSON or tool output.\n"
+            "- Never narrate your internal pipeline (pre-fire, searches, 404s). Just "
+            "give the answer.\n"
             "## ANTI-FABRICATION (mandatory — fabricated answers are a BUG)\n"
             "- NEVER invent events, shows, prices, schedules, phone numbers, or URLs. "
             "If the pre-fire results do not contain the answer, say plainly: \"I couldn't "
@@ -925,6 +927,12 @@ class Cortex:
             yield ev
 
         reply = "".join(reply_parts)
+        # strip residual ctrl JSON blocks (model compliance gaps)
+        import re as _re
+        reply = _re.sub(r'\{\s*"ctrl"\s*:[^}]*\}', "", reply)
+        reply = _re.sub(r'^```json\s*\{\"ctrl\"[\s\S]*?\}```', "", reply)
+        reply = _re.sub(r'^\{"ctrl":\{.*?\}\}', "", reply)
+        reply = _re.sub(r'^\n+', "", reply)
         reply, inline_cards = strip_card_tags(reply)
         cards.extend(inline_cards)
 
