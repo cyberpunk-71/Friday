@@ -276,6 +276,10 @@ class GeminiProvider(LLMProvider):
             body["systemInstruction"] = {"parts": sys_parts}
         if max_tokens:
             body["generationConfig"]["maxOutputTokens"] = max_tokens
+        # thinking models (3.x flash) spend tokens/seconds thinking; keep it
+        # minimal so chat stays fast and text actually comes out (gemtest
+        # showed a 50-token budget fully consumed by thoughts → empty text)
+        body["generationConfig"]["thinkingConfig"] = {"thinkingLevel": "minimal"}
         gtools = _gemini_tools(tools)
         if gtools:
             body["tools"] = gtools
@@ -295,7 +299,9 @@ class GeminiProvider(LLMProvider):
         """POST to /models/{model}{suffix}, walking the candidate chain on
         model-gone errors AND the auth-method chain on 401s (x-goog-api-key
         first, then Bearer — covers both AIza/AQ auth keys and OAuth tokens).
-        Returns (model, response) on success. Caller closes the response."""
+        ANY per-candidate failure (network drop, ReadError, bad status)
+        records the error and tries the next candidate — only when ALL fail
+        does it raise. Returns (model, response) on success. Caller closes."""
         candidates = [model_override] if model_override else self._models
         auths = ["key", "bearer"]
         last_err = ""
@@ -310,7 +316,10 @@ class GeminiProvider(LLMProvider):
                         resp = await cm.__aenter__()
                         if resp.status_code == 200:
                             return m, resp
-                        err = (await resp.aread()).decode()[:400]
+                        try:
+                            err = (await resp.aread()).decode()[:400]
+                        except Exception as e2:
+                            err = f"read-failed: {type(e2).__name__}"
                         await cm.__aexit__(None, None, None)
                     else:
                         resp = await self.client().post(url, json=body,
@@ -329,17 +338,32 @@ class GeminiProvider(LLMProvider):
                     if resp.status_code == 401:
                         last_err = err
                         continue
-                    raise RuntimeError(f"gemini {resp.status_code}: {err}")
+                    # anything else (400/403/429/5xx...) → next candidate too;
+                    # a single model's failure must never kill the chain
+                    last_err = f"gemini {resp.status_code}: {err}"
+                    continue
                 except httpx.HTTPError as e:
-                    raise RuntimeError(f"{self.name} network error: {type(e).__name__}: {e}") from e
-        raise RuntimeError(f"gemini: all auth methods failed — {last_err[:220]}")
+                    last_err = f"{self.name} {type(e).__name__}: {e}"
+                    continue
+        raise RuntimeError(f"gemini: all attempts failed — {last_err[:220]}")
 
     async def stream(self, messages: list[dict], json_mode: bool = False,
                      temperature: float = 0.6, max_tokens: int | None = None,
                      **kw) -> AsyncIterator[str]:
         body = self._body(messages, temperature, max_tokens)
-        _model, resp = await self._post(":streamGenerateContent?alt=sse", body,
-                                        model_override=kw.get("model", ""), stream=True)
+        try:
+            _model, resp = await self._post(":streamGenerateContent?alt=sse", body,
+                                            model_override=kw.get("model", ""), stream=True)
+        except RuntimeError:
+            # streaming failed entirely (some AQ keys work with generateContent
+            # but the SSE endpoint drops the connection) — fall back to the
+            # non-streaming call and yield its text in chunks. Chat must work.
+            text = await self.complete(messages, json_mode=json_mode,
+                                       temperature=temperature, max_tokens=max_tokens, **kw)
+            if text:
+                for i in range(0, len(text), 40):
+                    yield text[i:i + 40]
+            return
         try:
             async for line in resp.aiter_lines():
                 if not line.startswith("data:"):
