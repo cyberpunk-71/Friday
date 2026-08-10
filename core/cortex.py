@@ -950,10 +950,13 @@ class Cortex:
             yield ev
 
         reply = "".join(reply_parts)
-        # strip residual ctrl JSON blocks (model compliance gaps) — robust
+        # strip residual ctrl JSON blocks (model compliance gaps) — robust:
+        # full blocks AND partial tails (","memory_writes":...,"ask":[]}")
         reply = strip_ctrl_json(reply)
         reply = re.sub(r'^```json\s*\n?', "", reply)
         reply = strip_ctrl_json(reply)
+        reply = re.sub(r'^(?:[," ]{0,3}"?(?:memory_writes|code_intent|config_deltas|ask|depth|tooliness|stakes)"?\s*:\s*\{[^\n]*\}|[," ]{0,3}"?(?:memory_writes|code_intent|config_deltas|ask|depth|tooliness|stakes)"?\s*:\s*\[[^\n]*\]|[," ]{0,3}"?(?:memory_writes|code_intent|config_deltas|ask|depth|tooliness|stakes)"?\s*:\s*[^,}\n]*),?\n?', "", reply, count=8)
+        reply = re.sub(r'^[," ]{0,4}\}?\s*\n?', "", reply)
         reply = re.sub(r'^\n+', "", reply)
         reply, inline_cards = strip_card_tags(reply)
         cards.extend(inline_cards)
