@@ -259,20 +259,21 @@ if not row or not row["api_key"]:
 key = row["api_key"]
 print("key prefix:", key[:6], "len:", len(key))
 p = GeminiProvider(api_key=key)
-from core.providers import GEMINI_MODELS
+import httpx
 async def go():
-    ok_any = False
-    for m in [p.model] + [x for x in GEMINI_MODELS if x != p.model]:
-        for auth in ("key", "bearer"):
+    async with httpx.AsyncClient(timeout=60) as client:
+        for m in [p.model] + GEMINI_MODELS:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent"
+            body = {"contents": [{"role": "user", "parts": [{"text": "say hi in 3 words"}]}],
+                    "generationConfig": {"temperature": 0.6, "maxOutputTokens": 50}}
             try:
-                out = await p.complete([{"role": "user", "content": "say hi in 3 words"}],
-                                       max_tokens=30, model=m)
-                print(f"model={m} auth={auth} OK -> {out[:60]!r}")
-                ok_any = True
-                return
+                r = await client.post(url, json=body, headers={"x-goog-api-key": key})
+                print(f"model={m} status={r.status_code}")
+                print("  body:", r.text[:400].replace(chr(10), " "))
+                if r.status_code == 200:
+                    return
             except Exception as e:
-                print(f"model={m} auth={auth} FAIL -> {str(e)[:140]}")
-    print("ALL FAILED" if not ok_any else "")
+                print(f"model={m} EXC {str(e)[:120]}")
 asyncio.get_event_loop().run_until_complete(go())
 PY
 )\n"
