@@ -717,6 +717,10 @@ def make_llm(scope: str = "chat") -> LLMProvider:
         chat_prov = db.get_setting("llm.provider", "deepseek") or "deepseek"
         want = db.get_setting(f"llm.{scope}.provider", "") or chat_prov
         model = db.get_setting(f"llm.{scope}.model", "") or ""
+        # belt-and-braces: if an API key ever leaked into the model field,
+        # ignore it here (use the default chain) even before DB cleanup runs
+        if re.match(r"^(sk-|AIza|AQ\.)", model.strip()):
+            model = ""
         # a scope inherits chat's model override ONLY when it uses the same
         # provider (a gemini model string must never leak into deepseek calls)
         if not model and want == chat_prov:

@@ -207,6 +207,17 @@ async def chat_history(limit: int = 50):
 @app.get("/api/admin/overview")
 async def admin_overview(request: Request, _: bool = Depends(_admin_auth)):
     db = get_db()
+    # self-heal the RUNNING provider: if a stale instance was built with an
+    # API key as its model (pre-fix), rebuild it from clean DB state so chat
+    # stops 404-ing once per call
+    llm = getattr(request.app.state, "cortex", None)
+    if llm is not None and hasattr(llm.llm, "model"):
+        if KEYLIKE_RE.match(str(llm.llm.model or "")):
+            try:
+                from .providers import make_llm
+                llm.llm = make_llm("chat")
+            except Exception:
+                pass
     hermes = Hermes(db)
     spend = hermes.spend_today()
     daily = cfg.get("budget.daily_usd", 6.0)
