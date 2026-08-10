@@ -76,22 +76,45 @@ def parse_ctrl(accumulated: str) -> tuple[dict | None, str]:
 def strip_ctrl_json(text: str) -> str:
     """Remove a leading ctrl-JSON block. Tolerant of the model's truncated
     JSON (it often drops closing braces). Heuristic: a leading { ... } block
-    on the first line(s) containing '"ctrl"' gets removed entirely."""
+    on the first line(s) containing '"ctrl"' — OR a bare {"depth":...} ctrl
+    JSON (Gemini emits the wrapper-less shape) — gets removed entirely."""
     t = text.lstrip()
     if not t.startswith("{"):
         return text
-    # scan to the LAST } on the first line (or first 2 lines) — the model's
-    # ctrl block is always one JSON blob at the very start
-    lines = t.split("\n", 2)
-    first = lines[0] if lines else t
-    if '"ctrl"' not in first:
+    # look at the first 300 chars — the model's ctrl block is at the very start
+    first = t.split("\n", 1)[0]
+    has_ctrl = '"ctrl"' in first or bool(re.match(
+        r'\{\s*"(?:depth|tooliness|emotionality|novelty|stakes|config_delt(?:as)?|memory_writ(?:es)?|code_inten(?:t)?|ask)"', first))
+    if not has_ctrl:
         return text
-    # find the last '}' in the first two lines
-    head = "\n".join(lines[:2])
-    last_close = head.rfind("}")
-    if last_close > 0 and head[:last_close].count("{") >= 1:
+    # find the TOP-LEVEL closing '}' via a balanced scan (never the first
+    # '}' of an inner object like "config_deltas":{} — that corrupted the
+    # truncated-ctrl cut and leaked ',\n\nEvents...')
+    depth = 0
+    in_str = False
+    esc = False
+    last_close = -1
+    for i, ch in enumerate(t[:2000]):
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                last_close = i
+                break
+    if last_close > 0:
         # verify it looks like our ctrl block: contains "depth" or "config_deltas"
-        if "depth" in head[:last_close] or "config_deltas" in head[:last_close] or "memory_writes" in head[:last_close]:
+        if "depth" in t[:last_close] or "config_deltas" in t[:last_close] or "memory_writes" in t[:last_close]:
             return text[last_close + 1:]
     return text
 
@@ -159,11 +182,13 @@ def strip_truncated_ctrl(text: str) -> str:
     t = "\n".join(lines[idx:]).lstrip("\n")
     # 2) single-line remnant: cut after the last ',"' (comma+quote) in the
     #    leading JSON region — prose rarely has ',"' so this lands right at
-    #    the truncation point
+    #    the truncation point. Drop any trailing comma / quote residue left
+    #    behind by the cut.
     if t.startswith("{"):
         cuts = [m.start() + 1 for m in re.finditer(r',"', t[:1500])]
         if cuts:
             t = t[cuts[-1]:]
+    t = re.sub(r'^[,\s]*', "", t)
     # 3) drop a partial known-key remnant ('"config_deltHey!...' → 'Hey!...')
     m = TRUNC_KEY_RE.match(t)
     if m and not t[m.end():].startswith((":", ",", "}", "]", "{", "[")):
@@ -201,6 +226,34 @@ def _truncated_ctrl_with_prose(buffer: str) -> bool:
         return False
     # must look like prose, not more JSON
     return not stripped.lstrip().startswith(("{", '"'))
+
+
+CTRL_MARKER = "⟨CTRL⟩"
+
+
+def _double_ctrl_marker(buffer: str) -> bool:
+    """True when the buffer contains TWO ⟨CTRL⟩ markers — the model emits
+    the ctrl block twice (seen live: '⟨CTRL⟩{...0.⟨CTRL⟩{...'). The second
+    marker lands mid-JSON and breaks every parser."""
+    return buffer.count(CTRL_MARKER) >= 2
+
+
+def _cut_double_ctrl(buffer: str) -> str | None:
+    """Cut everything up to and including the SECOND ⟨CTRL⟩ marker, then
+    strip any ctrl JSON after it. Returns None when the pattern isn't there
+    (so the caller falls back to strip_truncated_ctrl)."""
+    first = buffer.find(CTRL_MARKER)
+    if first < 0:
+        return None
+    second = buffer.find(CTRL_MARKER, first + len(CTRL_MARKER))
+    if second < 0:
+        return None
+    rest = buffer[second + len(CTRL_MARKER):]
+    # if the rest is still a ctrl-JSON prefix, strip it too
+    cleaned = strip_truncated_ctrl(rest)
+    if cleaned and cleaned != rest:
+        rest = cleaned
+    return rest.lstrip("\n").lstrip()
 
 
 def strip_card_tags(prose: str) -> tuple[str, list[dict]]:
@@ -327,9 +380,18 @@ def polish_reply(reply: str) -> str:
     if not reply:
         return reply
     t = reply
-    # literal ⟨CTRL⟩ marker the model echoes (with or without the JSON blob)
-    if t.lstrip().startswith("\u27e8CTRL\u27e9"):
-        t = t.lstrip()[len("\u27e8CTRL\u27e9"):].lstrip()
+    # literal ⟨CTRL⟩ marker the model echoes (with or without the JSON blob);
+    # also handles the DOUBLE-emit where the second marker lands mid-JSON
+    if t.count(CTRL_MARKER) >= 2:
+        cut = _cut_double_ctrl(t)
+        if cut is not None:
+            t = cut
+    if t.lstrip().startswith(CTRL_MARKER):
+        t = t.lstrip()[len(CTRL_MARKER):].lstrip()
+    # a COMPLETE ctrl JSON may follow the marker (double-emit) — strip it
+    t = strip_ctrl_json(t)
+    # drop stray JSON closers ('}', ']') left behind by a mangled double-emit
+    t = re.sub(r"^\s*(?:[}\]]\s*)+", "", t)
     # truncated leading ctrl JSON (no closing braces) — the model jumps to
     # prose mid-JSON; strip it so it never renders
     t = strip_truncated_ctrl(t)
@@ -872,11 +934,16 @@ class Cortex:
                         buffer = ""
                 elif len(buffer) > 4000 or (
                         buffer.lstrip().startswith('{"ctrl"') and len(buffer) > 120
-                        and _truncated_ctrl_with_prose(buffer)):
-                    # no parseable CTRL block — the model either skipped it
-                    # or emitted a TRUNCATED ctrl JSON then jumped to prose.
-                    # Strip any such JSON prefix so it NEVER reaches the user.
-                    cleaned = strip_truncated_ctrl(buffer)
+                        and _truncated_ctrl_with_prose(buffer)) or _double_ctrl_marker(buffer):
+                    # no parseable CTRL block — the model either skipped it,
+                    # emitted a TRUNCATED ctrl JSON then jumped to prose, or
+                    # emitted the ⟨CTRL⟩ block TWICE (seen live: first chunk
+                    # was '⟨CTRL⟩{...emotionality":0.⟨CTRL⟩{...' — the
+                    # re-emitted marker inside the JSON). Cut at the second
+                    # marker so the junk never reaches the user.
+                    cleaned = _cut_double_ctrl(buffer)
+                    if cleaned is None:
+                        cleaned = strip_truncated_ctrl(buffer)
                     prose_started = True
                     yield {"type": "delta", "text": cleaned}
                     buffer = ""
