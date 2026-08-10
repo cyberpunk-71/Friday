@@ -1,54 +1,59 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Friday–Δ</title>
-<link rel="stylesheet" href="/static/style.css?v=2.2.0"/>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🜲</text></svg>"/>
+<link rel="stylesheet" href="/static/style.css?v=3.0.0"/>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%23ff7849'/><stop offset='1' stop-color='%23ff5e3a'/></linearGradient></defs><rect x='8' y='8' width='84' height='84' rx='22' fill='url(%23g)'/><text x='50' y='68' font-size='52' text-anchor='middle' fill='white' font-family='Georgia,serif'>Δ</text></svg>"/>
 </head>
 <body>
 <div id="offline-banner" class="hidden">
-  ⚠ <b>This is the OFFLINE SANDBOX PREVIEW</b> — no internet, answers are stubs.
+  <span class="dot"></span> ⚠ <b>This is the OFFLINE SANDBOX PREVIEW</b> — no internet, answers are stubs.
   Use the real Friday (DeepSeek + live web search) at:
   <b id="offline-banner-link"></b>
 </div>
 <div id="app">
   <aside id="sidebar">
     <div class="brand">
-      <div class="logo">FRIDAY<span>–Δ</span></div>
-      <div class="tagline">event-sourced · one-pass · code-acting · git-evolving</div>
+      <div class="logo">Friday<span class="delta">Δ</span></div>
+      <div class="tagline">your cognitive companion — one chat, everything inline</div>
     </div>
+
     <nav id="nav">
-      <button class="nav-item active" data-view="chat">💬 Chat</button>
-      <button class="nav-item" data-view="tasks">🧩 Tasks</button>
-      <button class="nav-item" data-view="memory">🧠 Memory</button>
-      <button class="nav-item" data-view="focus">🎯 Focus</button>
-      <button class="nav-item" data-view="books">📚 Books</button>
-      <button class="nav-item" data-view="admin">⚙️ Admin</button>
+      <button class="nav-item active" data-view="chat"><span class="n-ico">✦</span><span class="n-label">Chat</span></button>
+      <button class="nav-item" data-view="tasks"><span class="n-ico">◫</span><span class="n-label">Tasks</span></button>
+      <button class="nav-item" data-view="memory"><span class="n-ico">◍</span><span class="n-label">Memory</span></button>
+      <button class="nav-item" data-view="focus"><span class="n-ico">◎</span><span class="n-label">Focus</span></button>
+      <button class="nav-item" data-view="books"><span class="n-ico">▤</span><span class="n-label">Books</span></button>
+      <button class="nav-item" data-view="admin"><span class="n-ico">⚙</span><span class="n-label">Admin</span></button>
     </nav>
+
     <div class="side-widgets">
-      <div class="widget"><div class="widget-title">VERSION</div>
-        <div id="ui-version" class="dim">Friday–Δ <b style="color:var(--accent)">UI v2.2</b> · core 0.1.0</div>
-      </div>
       <div id="focus-widget" class="widget hidden">
-        <div class="widget-title">FOCUS</div>
+        <div class="widget-title">FOCUS SESSION</div>
         <div id="focus-ring"><svg viewBox="0 0 60 60">
           <defs><linearGradient id="gradRing" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stop-color="#6ea8ff"/><stop offset="100%" stop-color="#a78bfa"/>
+            <stop offset="0%" stop-color="#0ea5a4"/><stop offset="100%" stop-color="#34d399"/>
           </linearGradient></defs>
           <circle class="ring-bg" cx="30" cy="30" r="26"/><circle class="ring-fg" id="focus-ring-fg" cx="30" cy="30" r="26"/></svg><span id="focus-time">25:00</span></div>
         <div id="focus-drifts">drifts: 0</div>
       </div>
+
       <div class="widget">
-        <div class="widget-title">BUDGET</div>
-        <div class="budget-row"><span id="spend-today">$0.0000</span><span id="budget-total">/ $6.00</span></div>
+        <div class="widget-title">DAILY BUDGET</div>
+        <div class="budget-row"><span id="spend-today">$0.0000</span><span id="budget-total" class="dim">/ $6.00</span></div>
         <div class="bar"><div id="budget-bar" class="bar-fill"></div></div>
         <div id="ask-budget" class="dim">ask budget: 2 left</div>
       </div>
+
       <div class="widget">
         <div class="widget-title">SYSTEM</div>
         <div id="sys-status" class="dim">loading…</div>
+        <div class="sys-row">
+          <button id="theme-toggle" class="mini-btn" title="Toggle light/dark">◐ Theme</button>
+          <div id="ui-version" class="dim">UI v3.0 · core 0.1.0</div>
+        </div>
       </div>
     </div>
   </aside>
@@ -57,7 +62,8 @@
     <!-- ============ CHAT ============ -->
     <section id="view-chat" class="view active">
       <div id="chat-header">
-        <div id="chat-title">Friday — one chat, everything inline</div>
+        <div id="chat-title">Friday<small>Δ</small></div>
+        <div id="status-pill"><span class="live-dot"></span><span id="status-text">live</span></div>
         <div id="chat-meta" class="dim"></div>
       </div>
       <div id="chat-scroll">
@@ -70,8 +76,8 @@
         </div>
         <div class="composer-row">
           <button id="btn-voice" class="icon-btn" title="Voice (hold or tap)">🎙</button>
-          <textarea id="composer-input" rows="1" placeholder="Talk to Friday… (research, tasks, memory, focus, books — one chat)"></textarea>
-          <button id="btn-send" class="send-btn">➤</button>
+          <textarea id="composer-input" rows="1" placeholder="Talk to Friday…"></textarea>
+          <button id="btn-send" class="send-btn">↑</button>
         </div>
         <div id="composer-hints" class="dim">try: “dark mode kar do” · “start focos 25m allow github” · “research phone undr 20k” · “my new deepseek api kes sk-xxx for research”</div>
       </div>
@@ -82,10 +88,10 @@
       <div class="panel-head">
         <h2>Tasks</h2>
         <div class="panel-actions">
-          <button id="tasks-refresh" class="btn">⟳ refresh</button>
+          <button id="tasks-refresh" class="btn ghost">⟳ refresh</button>
         </div>
       </div>
-      <div class="panel-head" style="padding-top:4px"><h4 style="font-size:13px;color:var(--accent);letter-spacing:.08em">📡 TRACKERS</h4></div>
+      <div class="panel-head sub"><h4 class="sub-head">📡 TRACKERS</h4></div>
       <div id="tracker-list" class="cards" style="padding:0 22px 8px"></div>
       <div id="task-kanban" class="kanban"></div>
       <div id="task-detail" class="drawer hidden"></div>
@@ -118,11 +124,11 @@
         <div id="mtab-constraints" class="mtab"><div id="constraint-list" class="cards"></div></div>
         <div id="mtab-graph" class="mtab"><div id="graph-box"></div><div id="graph-list"></div></div>
         <div id="mtab-explain" class="mtab">
-          <div class="toolbar"><input id="explain-q" placeholder="why did you remember X?"/><button id="explain-go" class="btn">explain</button></div>
+          <div class="toolbar"><input id="explain-q" placeholder="why did you remember X?"/><button id="explain-go" class="btn ghost">explain</button></div>
           <div id="explain-out"></div>
         </div>
         <div id="mtab-sql" class="mtab">
-          <div class="toolbar"><input id="sql-q" placeholder="SELECT … (read-only over DELTA views)"/><button id="sql-go" class="btn">run</button></div>
+          <div class="toolbar"><input id="sql-q" placeholder="SELECT … (read-only over DELTA views)"/><button id="sql-go" class="btn ghost">run</button></div>
           <div id="sql-out"></div>
         </div>
       </div>
@@ -157,7 +163,7 @@
     <section id="view-books" class="view">
       <div class="panel-head"><h2>Books</h2>
         <div class="panel-actions">
-          <label class="btn file-btn">⬆ Upload (no size limit)
+          <label class="btn ghost file-btn">⬆ Upload (no size limit)
             <input id="book-file" type="file" accept=".pdf,.txt,.epub" hidden/>
           </label>
         </div>
@@ -200,7 +206,7 @@
               </select>
               <input id="mc-key" type="password" placeholder="api key…"/>
               <button id="mc-save" class="btn primary">Save key</button>
-              <button id="mc-test" class="btn">Test</button>
+              <button id="mc-test" class="btn ghost">Test</button>
             </div>
             <div class="dim" style="margin-top:6px">Keys go live instantly — Tavily/Brave/Exa power real web search, Groq powers voice.</div>
             <div id="mc-result"></div>
@@ -220,7 +226,7 @@
             <p class="dim" style="margin:6px 0">Tracks every page you visit (working-set learning), detects focus drifts, and nudges you with toasts / Chrome notifications / voice. Load it once — it updates itself from this server.</p>
             <div class="form-row">
               <a class="btn primary" href="/api/extension/zip" download="friday-sensor.zip">⬇ Download friday-sensor.zip</a>
-              <button class="btn" onclick="copyServerUrl()">📋 Copy server URL</button>
+              <button class="btn ghost" onclick="copyServerUrl()">📋 Copy server URL</button>
             </div>
             <div class="dim" style="margin-top:8px">Install: unzip → chrome://extensions → Developer mode → <b>Load unpacked</b> → pick the folder → set Server URL (paste the copied link) in the extension popup.</div>
             <div id="oc-ext-status"></div>
@@ -237,8 +243,8 @@
             <div id="eval-summary"></div>
             <div class="form-row" style="margin-top:12px">
               <a class="btn primary" href="/api/eval/file/eval_report.html" download>⬇ Download HTML report</a>
-              <a class="btn" href="/api/eval/file/eval_report.json" download>⬇ JSON</a>
-              <a class="btn" href="/api/eval/file/eval_chat_log.md" download>⬇ Full chat log</a>
+              <a class="btn ghost" href="/api/eval/file/eval_report.json" download>⬇ JSON</a>
+              <a class="btn ghost" href="/api/eval/file/eval_chat_log.md" download>⬇ Full chat log</a>
             </div>
             <div id="eval-details"></div>
           </div>
@@ -251,6 +257,6 @@
 <div id="toast-stack"></div>
 <div id="chrome-modal" class="hidden"><div id="chrome-modal-box"></div></div>
 
-<script src="/static/app.js?v=2.2.0"></script>
+<script src="/static/app.js?v=3.0.0"></script>
 </body>
 </html>

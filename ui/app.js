@@ -131,26 +131,56 @@ function switchView(v) {
 /* ============================== chat engine ============================== */
 let streamingReply = "";   // module-level buffer for the in-flight reply
 
-function addMsg(role, html) {
+function addMsg(role, html, opts = {}) {
   const wrap = document.createElement("div");
   wrap.className = "msg " + role;
-  wrap.innerHTML = `<div class="who">${role === "user" ? "YOU" : "FRIDAY"}</div><div class="bubble">${html}</div>`;
+  const who = role === "user" ? "YOU" : "FRIDAY";
+  const ts = opts.ts ? `<span class="ts">${new Date(opts.ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>` : "";
+  const copy = role === "friday" ? `<button class="copy-btn" title="Copy reply" data-raw="${esc(opts.raw || "")}">⧉</button>` : "";
+  wrap.innerHTML = `<div class="who"><span class="who-dot"></span>${who}${copy}${ts}</div><div class="bubble">${html}</div>`;
   $("#chat-stream").appendChild(wrap);
   scrollChat();
   return wrap;
 }
+/* copy-to-clipboard for assistant replies (delegated — works for restored too) */
+document.addEventListener("click", (e) => {
+  const b = e.target.closest(".copy-btn");
+  if (!b) return;
+  const raw = b.dataset.raw || "";
+  const done = () => { b.textContent = "✓"; setTimeout(() => { b.textContent = "⧉"; }, 1200); };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(raw).then(done).catch(() => {});
+  else { const ta = document.createElement("textarea"); ta.value = raw; document.body.appendChild(ta); ta.select(); try { document.execCommand("copy"); done(); } catch (err) {} ta.remove(); }
+});
 function scrollChat() { const el = $("#chat-scroll"); if (el) el.scrollTop = el.scrollHeight; }
 
 /* restore previous chats + panels after any refresh — hard refresh must feel
    like nothing was lost */
+function dayLabel(ts) {
+  const d = new Date(ts * 1000), now = new Date();
+  const same = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  if (same(d, now)) return "Today";
+  const yest = new Date(now.getTime() - 86400000);
+  if (same(d, yest)) return "Yesterday";
+  return d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+}
+function addDayDivider(label) {
+  const div = document.createElement("div");
+  div.className = "chat-day";
+  div.textContent = label;
+  $("#chat-stream").appendChild(div);
+}
 async function restoreChat() {
   try {
     const r = await api("/api/chat/history?limit=50");
     const turns = (r.turns || []).filter(t => t.user_text && t.reply);
     if (turns.length) {
+      let lastDay = "";
       for (const t of turns) {
-        addMsg("user", md(t.user_text));
-        addMsg("friday", md(t.reply));
+        const ts = t.created_ts || 0;
+        const day = ts ? dayLabel(ts) : "";
+        if (day && day !== lastDay) { addDayDivider(day); lastDay = day; }
+        addMsg("user", md(t.user_text), { ts });
+        addMsg("friday", md(t.reply), { ts, raw: t.reply });
         state.chat.push(t);
       }
       scrollChat();
@@ -182,7 +212,7 @@ async function sendChat(text) {
   if (!text || state.streaming) return;
   state.streaming = true;
   streamingReply = "";
-  addMsg("user", md(text));
+  addMsg("user", md(text), { ts: Date.now() / 1000 });
   const typing = typingIndicator();
   let replyEl = null;
   const corr = "cor_" + Math.random().toString(16).slice(2, 10);
@@ -262,12 +292,9 @@ function handleChatEvent(ev, typing) {
     case "done": {
       typing.remove();
       $("#chat-meta").textContent = `· ${ev.model} · ${ev.latency_ms}ms · ${fmtMoney(ev.cost_usd)} · ${ev.slots_used} slots`;
-      const wrap = document.createElement("div");
-      wrap.className = "msg friday";
-      wrap.innerHTML = `<div class="who">FRIDAY</div><div class="bubble">${md(ev.reply || streamingReply || "")}</div>`;
-      $("#chat-stream").appendChild(wrap);
-      scrollChat();
-      state.chat.push({ role: "friday", text: ev.reply || streamingReply });
+      const final = ev.reply || streamingReply || "";
+      addMsg("friday", md(final), { ts: Date.now() / 1000, raw: final });
+      state.chat.push({ role: "friday", text: final });
       streamingReply = "";
       break;
     }
@@ -964,6 +991,13 @@ async function pollOverview() {
     $("#budget-bar").style.width = Math.min(100, ov.budget_pct) + "%";
     $("#ask-budget").textContent = "ask budget: " + ov.ask_budget_left + " left";
     $("#sys-status").textContent = `${ov.llm_provider} · ${ov.search_provider} · ${ov.counts.atoms} atoms`;
+    // status pill in the chat header
+    const pill = $("#status-text");
+    if (pill) {
+      const p = String(ov.llm_provider || "");
+      if (p.includes("sim")) { pill.textContent = "offline"; }
+      else if (p) { pill.textContent = "live · " + p; }
+    }
   } catch (e) {}
 }
 function pollFocus() {
@@ -1008,6 +1042,14 @@ async function nudgeStream() {
 }
 
 function applyTheme(t) { document.documentElement.dataset.theme = t; }
+/* theme toggle — persists to the server so refresh keeps it */
+$("#theme-toggle").addEventListener("click", async () => {
+  const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+  applyTheme(next);
+  try { await api("/api/admin/settings", { method: "PUT", body: JSON.stringify({ "ui.theme": next }) }); }
+  catch (e) {}
+  toast(next === "dark" ? "Dark mode on" : "Light mode on", "good");
+});
 
 /* ============================== boot ============================== */
 (async function boot() {
