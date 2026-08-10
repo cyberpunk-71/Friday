@@ -89,6 +89,51 @@ function md(text) {
   return out.replace(/\u0000(\d+)\u0000/g, (_, i) => blocks[+i]);
 }
 
+/* strip a raw {"ctrl":{...}} JSON prefix from a reply/delta — handles BOTH
+   complete blocks (balanced-brace cut) and TRUNCATED ones (model jumped to
+   prose without closing braces: '{"ctrl":{... "config_deltHey! ...').
+   Mirrors core/cortex.py strip_truncated_ctrl. */
+function stripLeadingCtrl(t) {
+  if (!t || !/^\s*\{/.test(t)) return t;
+  const head = t.slice(0, 300);
+  if (!head.includes('"ctrl"') || !/"(?:depth|tooliness|emotionality|novelty|stakes|config_delt(?:as)?|memory_writ(?:es)?|code_inten(?:t)?|ask)"/.test(head)) return t;
+  // complete JSON: balanced-brace cut
+  let depth = 0, inStr = false, esc = false;
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i];
+    if (inStr) { if (esc) esc = false; else if (c === "\\") esc = true; else if (c === '"') inStr = false; }
+    else if (c === '"') inStr = true;
+    else if (c === "{") depth++;
+    else if (c === "}") { depth--; if (depth === 0) return t.slice(i + 1); }
+  }
+  // truncated: strip leading JSON-continuation lines (mirror server),
+  // then drop a partial known-key remnant ('"config_deltHey!' → 'Hey!')
+  const KEYRE = /^"(?:depth|tooliness|emotionality|novelty|stakes|config_delt(?:as)?|memory_writ(?:es)?|code_inten(?:t)?|ask)[a-z_]*/;
+  const lines = t.split("\n");
+  let idx = 0;
+  while (idx < lines.length) {
+    const line = lines[idx].trim();
+    if (line.endsWith(",") || line.endsWith("{") || line.endsWith("[") || line.endsWith(":")) idx++;
+    else break;
+  }
+  let rest = lines.slice(idx).join("\n");
+  rest = rest.replace(KEYRE, "");
+  if (rest.startsWith("{") || rest.startsWith('"')) {
+    // single-line remnant: cut after the last ',"' in the leading region
+    const re = /,"/g;
+    let cut = 0, m;
+    const region = t.slice(0, 1500);
+    while ((m = re.exec(region)) !== null) cut = m.index + 1;
+    if (cut) {
+      rest = t.slice(cut).replace(KEYRE, "");
+      if (rest.startsWith("{") || rest.startsWith('"')) return t;
+    } else {
+      return t;
+    }
+  }
+  return rest;
+}
+
 function toast(msg, kind = "") {
   const el = document.createElement("div");
   el.className = "toast " + kind;
@@ -270,16 +315,11 @@ function handleChatEvent(ev, typing) {
       if (!typing.isConnected) { typing = typingIndicator(); }
       const bubble = typing.querySelector(".bubble");
       if (!bubble) return;
-      // filter out raw ctrl JSON blocks that the model sometimes emits
+      // filter out raw ctrl JSON blocks the model sometimes emits (complete
+      // OR truncated) so they never render
       let t = ev.text || "";
       t = t.replace(/^```json\s*/, "");
-      if (t.trim().startsWith("{")) {
-        const first = t.split("\n")[0];
-        if (first.includes("ctrl") && (first.includes("depth") || first.includes("config_deltas") || first.includes("memory_writes"))) {
-          const nl = t.indexOf("\n");
-          t = nl >= 0 ? t.slice(nl) : "";
-        }
-      }
+      t = stripLeadingCtrl(t);
       if (!t) return;
       streamingReply += t;
       bubble.innerHTML = md(streamingReply);
@@ -304,7 +344,7 @@ function handleChatEvent(ev, typing) {
     case "done": {
       typing.remove();
       $("#chat-meta").textContent = `· ${ev.model} · ${ev.latency_ms}ms · ${fmtMoney(ev.cost_usd)} · ${ev.slots_used} slots`;
-      const final = ev.reply || streamingReply || "";
+      const final = stripLeadingCtrl(ev.reply || streamingReply || "");
       addMsg("friday", md(final), { ts: Date.now() / 1000, raw: final });
       state.chat.push({ role: "friday", text: final });
       streamingReply = "";

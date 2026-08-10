@@ -573,3 +573,50 @@ def test_transient_failover_is_silent(cortex, db, monkeypatch):
     done = next(e for e in events if e["type"] == "done")
     assert done["model"] == "deepseek"
     assert db.get_setting("llm.provider") == "gemini"   # routing untouched
+
+
+def test_strip_truncated_ctrl_cases():
+    """The model emits {"ctrl":{... then jumps to prose WITHOUT closing the
+    braces (seen live: '"config_deltHey! Still here...'). strip_truncated_ctrl
+    must remove the JSON prefix in all shapes; complete JSON is left for the
+    balanced stripper; mid-stream JSON must NOT be cut (no prose yet)."""
+    from core.cortex import strip_truncated_ctrl, _truncated_ctrl_with_prose
+    multi = ('{"ctrl":{"depth":0.05,"tooliness":0.0,"emotionality":0.3,"novelty":0.0,'
+             '"stakes":0.0,\n"config_deltHey! Still here, still in focus mode with you'
+             ' — about 18 minutes left on the AI agent build. What\'s up?')
+    out = strip_truncated_ctrl(multi)
+    assert out.startswith("Hey! Still here") and '"ctrl"' not in out
+    single = '{"ctrl":{"depth":0.05,"stakes":0.0,"config_deltHey! one line'
+    out2 = strip_truncated_ctrl(single)
+    assert out2.startswith("Hey! one line") and '"ctrl"' not in out2
+    # mid-stream (no prose yet) → stripped to nothing → NOT flagged as prose
+    assert strip_truncated_ctrl('{"ctrl":{"depth":0.05,') == ""
+    assert _truncated_ctrl_with_prose('{"ctrl":{"depth":0.05,') is False
+    assert _truncated_ctrl_with_prose(multi) is True
+
+
+def test_truncated_ctrl_never_leaks_into_turn(cortex, db, monkeypatch):
+    """A provider that emits a TRUNCATED ctrl JSON followed by prose must
+    produce a clean reply — no raw JSON in deltas, done.reply, or history."""
+    from core.cortex import Cortex
+    from core.providers import SimSearch
+
+    class TruncatedCtrlProvider:
+        name = "deepseek"
+        async def stream(self, messages, **kw):
+            yield '{"ctrl":{"depth":0.05,"tooliness":0.0,"emotionality":0.3,"novelty":0.0,'
+            yield '"stakes":0.0,\n"config_delt'
+            yield 'Hey! Still here, still in focus mode with you.'
+            yield ' What\'s up?'
+
+    c = Cortex(db, llm=TruncatedCtrlProvider(), search=SimSearch())
+    events = collect(c.turn("hey"))
+    deltas = "".join(e["text"] for e in events if e["type"] == "delta")
+    assert '"ctrl"' not in deltas and '"config_delt' not in deltas
+    assert "Hey! Still here" in deltas
+    done = next(e for e in events if e["type"] == "done")
+    assert '"ctrl"' not in done["reply"]
+    assert "Hey! Still here" in done["reply"]
+    # history is clean too (stored reply feeds the next turn)
+    row = db.q1("SELECT reply FROM turns ORDER BY turn_id DESC LIMIT 1")
+    assert '"ctrl"' not in (row["reply"] or "")

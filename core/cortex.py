@@ -92,6 +92,64 @@ def strip_ctrl_json(text: str) -> str:
     return text
 
 
+# keys the model uses inside the ⟨CTRL⟩ block — used to recognise a TRUNCATED
+# ctrl JSON (emitted with no closing braces, followed directly by prose)
+CTRL_KNOWN_KEYS = r"(?:depth|tooliness|emotionality|novelty|stakes|config_delt(?:as)?|memory_writ(?:es)?|code_inten(?:t)?|ask)"
+CTRL_KNOWN_KEYS_RE = re.compile(r'"' + CTRL_KNOWN_KEYS + r'"')
+TRUNC_KEY_RE = re.compile(r'^"(' + CTRL_KNOWN_KEYS + r'[a-z_]*)"?')
+
+
+def strip_truncated_ctrl(text: str) -> str:
+    """Remove a TRUNCATED leading ctrl JSON: the model emits {\"ctrl\":{...
+    then jumps to prose WITHOUT closing the braces (seen live:
+    '\"config_deltHey! Still here...'). The balanced parser in strip_ctrl_json
+    can't complete (no closing '}'), so this strips line-by-line while lines
+    look like JSON continuation, cuts after the last ',\"' that precedes a
+    known ctrl key, and drops any partial key remnant ('\"config_delt')."""
+    if not text:
+        return text
+    t = text.lstrip()
+    if not (t.startswith("{") and '"ctrl"' in t[:300]
+            and CTRL_KNOWN_KEYS_RE.search(t[:300])):
+        return text
+    # 1) consume leading lines that end with JSON-continuation tokens
+    lines = t.split("\n")
+    idx = 0
+    while idx < len(lines):
+        line = lines[idx].strip()
+        if line.endswith((",", "{", "[", ":")):
+            idx += 1
+        else:
+            break
+    t = "\n".join(lines[idx:]).lstrip("\n")
+    # 2) single-line remnant: cut after the last ',"' (comma+quote) in the
+    #    leading JSON region — prose rarely has ',"' so this lands right at
+    #    the truncation point
+    if t.startswith("{"):
+        cuts = [m.start() + 1 for m in re.finditer(r',"', t[:1500])]
+        if cuts:
+            t = t[cuts[-1]:]
+    # 3) drop a partial known-key remnant ('"config_deltHey!...' → 'Hey!...')
+    m = TRUNC_KEY_RE.match(t)
+    if m and not t[m.end():].startswith((":", ",", "}", "]", "{", "[")):
+        t = t[m.end():]
+    return t.lstrip("\n").lstrip()
+
+
+def _truncated_ctrl_with_prose(buffer: str) -> bool:
+    """True when the buffer holds a ctrl-JSON prefix that will NEVER parse
+    (truncated, no closing brace) followed by real prose — so we can cut it
+    early instead of buffering 4000 chars. A mid-stream COMPLETE JSON (still
+    streaming) yields empty stripped text, so it won't be cut."""
+    if not buffer.lstrip().startswith('{"ctrl"'):
+        return False
+    stripped = strip_truncated_ctrl(buffer)
+    if not stripped or stripped == buffer:
+        return False
+    # must look like prose, not more JSON
+    return not stripped.lstrip().startswith(("{", '"'))
+
+
 def strip_card_tags(prose: str) -> tuple[str, list[dict]]:
     """Extract <card>...</card> blocks from prose; return (clean_prose, cards)."""
     cards = []
@@ -216,6 +274,9 @@ def polish_reply(reply: str) -> str:
     if not reply:
         return reply
     t = reply
+    # truncated leading ctrl JSON (no closing braces) — the model jumps to
+    # prose mid-JSON; strip it so it never renders
+    t = strip_truncated_ctrl(t)
     # leading self-name header ("**FRIDAY**" / "FRIDAY:\n") — never show it
     t = LEADING_NAME_RE.sub("", t, count=1)
     # mid-reply ctrl blocks (model compliance slip mid-stream)
@@ -240,7 +301,8 @@ def polish_history(reply: str) -> str:
     history — stops the model from imitating the old robotic style."""
     if not reply:
         return reply
-    t = BANNED_HEADER_LEAD_RE.sub("", reply)
+    t = strip_truncated_ctrl(reply)
+    t = BANNED_HEADER_LEAD_RE.sub("", t)
     t = BANNED_HEADER_RE.sub("", t)
     t = PIPELINE_NARRATION_RE.sub("", t)
     t = HR_RE.sub("", t)
@@ -715,10 +777,15 @@ class Cortex:
                         prose_started = True
                         yield {"type": "delta", "text": rest}
                         buffer = ""
-                elif len(buffer) > 4000:
-                    # no CTRL block — treat everything as prose
+                elif len(buffer) > 4000 or (
+                        buffer.lstrip().startswith('{"ctrl"') and len(buffer) > 120
+                        and _truncated_ctrl_with_prose(buffer)):
+                    # no parseable CTRL block — the model either skipped it
+                    # or emitted a TRUNCATED ctrl JSON then jumped to prose.
+                    # Strip any such JSON prefix so it NEVER reaches the user.
+                    cleaned = strip_truncated_ctrl(buffer)
                     prose_started = True
-                    yield {"type": "delta", "text": buffer}
+                    yield {"type": "delta", "text": cleaned}
                     buffer = ""
                 continue
             prose_started = True
