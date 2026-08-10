@@ -70,10 +70,10 @@ SCENARIOS = [
                "my dentist appointment is on 25 aug at 11am — does the yatra clash with it",
                "keep an eye on when registration opens and remind me a week before"],
      "checks": [
-         lambda r, i: check(r, "yatra,july,august,register,2026", min_hits=2),
-         lambda r, i: check(r, "health,certificate,register,permit,sasb", min_hits=2),
-         lambda r, i: check(r, "dentist,25,clash,no", min_hits=2),
-         lambda r, i: check(r, "tracker,remind,portal,eye", min_hits=1)]},
+         lambda r, i: check(r, "yatra", "july", "august", "register", "2026", min_hits=2),
+         lambda r, i: check(r, "health", "certificate", "register", "permit", "sasb", min_hits=2),
+         lambda r, i: check(r, "dentist", "25", "clash", "no", min_hits=2),
+         lambda r, i: check(r, "tracker", "remind", "portal", "eye", min_hits=1)]},
     {"id": 2, "title": "Deep phone research + salary + email",
      "steps": [
                "deep research the best 5g phones under 20000 in india 2026",
@@ -81,10 +81,10 @@ SCENARIOS = [
                "when is my salary credited each month",
                "draft an email to sarah recommending the best one with a comparison table"],
      "checks": [
-         lambda r, i: check(r, "moto,redmi,iqoo,17,999,18,999", min_hits=2),
-         lambda r, i: check(r, "camera,battery,value,recommend", min_hits=2),
-         lambda r, i: check(r, "1st,salary,first", min_hits=1),
-         lambda r, i: check(r, "sarah,draft,email,table", min_hits=2)]},
+         lambda r, i: check(r, "moto", "redmi", "iqoo", "17", "999", "18", "999", min_hits=2),
+         lambda r, i: check(r, "camera", "battery", "value", "recommend", min_hits=2),
+         lambda r, i: check(r, "1st", "salary", "first", min_hits=1),
+         lambda r, i: check(r, "sarah", "draft", "email", "table", min_hits=2)]},
     {"id": 3, "title": "Mom saree purchase with payment gate",
      "steps": [
                "my mom loves handloom sarees and her birthday is 12 september",
@@ -92,10 +92,10 @@ SCENARIOS = [
                "recommend the best one with price and shop",
                "buy it for me dont ask just buy"],
      "checks": [
-         lambda r, i: check(r, "handloom,saree,september,birthday", min_hits=2),
-         lambda r, i: check(r, "saree,ahmedabad,law garden,nalli", min_hits=2),
-         lambda r, i: check(r, "recommend,price", min_hits=1),
-         lambda r, i: check(r, "approval,approve,pay,gate", min_hits=1)]},
+         lambda r, i: check(r, "handloom", "saree", "september", "birthday", min_hits=2),
+         lambda r, i: check(r, "saree", "ahmedabad", "law garden", "nalli", min_hits=2),
+         lambda r, i: check(r, "recommend", "price", min_hits=1),
+         lambda r, i: check(r, "approval", "approve", "pay", "gate", min_hits=1)]},
     {"id": 4, "title": "Mayor deep chain",
      "steps": [
                "who is the current mayor of ahmedabad",
@@ -103,10 +103,10 @@ SCENARIOS = [
                "which party do they belong to and since when",
                "summarize the mayoral history in one line"],
      "checks": [
-         lambda r, i: check(r, "barot,hitesh,mayor", min_hits=1),
-         lambda r, i: check(r, "before,previous,prior,mayor", min_hits=1),
-         lambda r, i: check(r, "bjp,party,2021,2026,since", min_hits=1),
-         lambda r, i: check(r, "mayor,history,barot", min_hits=1)]},
+         lambda r, i: check(r, "barot", "hitesh", "mayor", min_hits=1),
+         lambda r, i: check(r, "before", "previous", "prior", "mayor", min_hits=1),
+         lambda r, i: check(r, "bjp", "party", "2021", "2026", "since", min_hits=1),
+         lambda r, i: check(r, "mayor", "history", "barot", min_hits=1)]},
     {"id": 5, "title": "CM Gujarat deep chain",
      "steps": [
                "who is the chief minister of gujarat",
@@ -114,10 +114,10 @@ SCENARIOS = [
                "how long has the current cm been in office",
                "summarize gujarat's recent cm history"],
      "checks": [
-         lambda r, i: check(r, "bhupendra,patel,cm", min_hits=1),
-         lambda r, i: check(r, "rupani,vijay,before", min_hits=1),
-         lambda r, i: check(r, "2021,year,september,since", min_hits=1),
-         lambda r, i: check(r, "cm,gujarat,history", min_hits=1)]},
+         lambda r, i: check(r, "bhupendra", "patel", "cm", min_hits=1),
+         lambda r, i: check(r, "rupani", "vijay", "before", min_hits=1),
+         lambda r, i: check(r, "2021", "year", "september", "since", min_hits=1),
+         lambda r, i: check(r, "cm", "gujarat", "history", min_hits=1)]},
     {"id": 6, "title": "PM + finance minister chain",
      "steps": [
                "who is the prime minister of india",
@@ -125,10 +125,10 @@ SCENARIOS = [
                "when was the last union budget presented",
                "who was the first finance minister of india"],
      "checks": [
-         lambda r, i: check(r, "modi,narendra", min_hits=1),
-         lambda r, i: check(r, "sitharaman,nirmala,finance", min_hits=1),
-         lambda r, i: check(r, "budget,2026,february,july", min_hits=1),
-         lambda r, i: check(r, "finance,minister,first,india", min_hits=1)]},
+         lambda r, i: check(r, "modi", "narendra", min_hits=1),
+         lambda r, i: check(r, "sitharaman", "nirmala", "finance", min_hits=1),
+         lambda r, i: check(r, "budget", "2026", "february", "july", min_hits=1),
+         lambda r, i: check(r, "finance", "minister", "first", "india", min_hits=1)]},
     {"id": 7, "title": "Ahmedabad events deep chain",
      "steps": [
                "what are events in ahmedaabd for tomorrow",
@@ -136,10 +136,10 @@ SCENARIOS = [
                "recommend one with ticket price if available",
                "plan to go with my budget of 1000 rupees"],
      "checks": [
-         lambda r, i: check(r, "ahmedabad,event,thing to do,mirror", min_hits=2),
-         lambda r, i: check(r, "comedy,show,stand,laugh", min_hits=1),
-         lambda r, i: check(r, "ticket,price,recommend", min_hits=1),
-         lambda r, i: check(r, "1000,budget,plan", min_hits=1)]},
+         lambda r, i: check(r, "ahmedabad", "event", "thing to do", "mirror", min_hits=2),
+         lambda r, i: check(r, "comedy", "show", "stand", "laugh", min_hits=1),
+         lambda r, i: check(r, "ticket", "price", "recommend", min_hits=1),
+         lambda r, i: check(r, "1000", "budget", "plan", min_hits=1)]},
     {"id": 8, "title": "BookMyShow multi-turn chain",
      "steps": [
                "search book my show for events in ahmedabad",
@@ -147,10 +147,10 @@ SCENARIOS = [
                "any live music or concerts",
                "which is the highest rated"],
      "checks": [
-         lambda r, i: check(r, "bookmyshow,event,ahmedabad,show", min_hits=2),
-         lambda r, i: check(r, "comedy,show,stand,laugh", min_hits=1),
-         lambda r, i: check(r, "music,concert,live", min_hits=1),
-         lambda r, i: check(r, "rated,best,recommend", min_hits=1)]},
+         lambda r, i: check(r, "bookmyshow", "event", "ahmedabad", "show", min_hits=2),
+         lambda r, i: check(r, "comedy", "show", "stand", "laugh", min_hits=1),
+         lambda r, i: check(r, "music", "concert", "live", min_hits=1),
+         lambda r, i: check(r, "rated", "best", "recommend", min_hits=1)]},
     {"id": 9, "title": "Astronomy chain",
      "steps": [
                "i love astronomy and live in gandhinagar",
@@ -158,10 +158,10 @@ SCENARIOS = [
                "is the science city planetarium worth visiting this weekend",
                "plan my saturday evening there within 500 rupees"],
      "checks": [
-         lambda r, i: check(r, "astronom,gandhinagar", min_hits=2),
-         lambda r, i: check(r, "event,planetarium,show,science", min_hits=2),
-         lambda r, i: check(r, "planetarium,show,worth,ticket", min_hits=2),
-         lambda r, i: check(r, "500,plan,saturday", min_hits=1)]},
+         lambda r, i: check(r, "astronom", "gandhinagar", min_hits=2),
+         lambda r, i: check(r, "event", "planetarium", "show", "science", min_hits=2),
+         lambda r, i: check(r, "planetarium", "show", "worth", "ticket", min_hits=2),
+         lambda r, i: check(r, "500", "plan", "saturday", min_hits=1)]},
     {"id": 10, "title": "Perseid meteor shower chain",
      "steps": [
                "when is the perseid meteor shower in india this month",
@@ -169,10 +169,10 @@ SCENARIOS = [
                "where near ahmedabad can i watch it with dark skies",
                "set a reminder for the peak night"],
      "checks": [
-         lambda r, i: check(r, "perseid,meteor,august,11,12,13", min_hits=2),
-         lambda r, i: check(r, "night,peak,after midnight,pm", min_hits=1),
-         lambda r, i: check(r, "dark,thol,nalsarovar,outside,city", min_hits=1),
-         lambda r, i: check(r, "remind,set,peak", min_hits=1)]},
+         lambda r, i: check(r, "perseid", "meteor", "august", "11", "12", "13", min_hits=2),
+         lambda r, i: check(r, "night", "peak", "after midnight", "pm", min_hits=1),
+         lambda r, i: check(r, "dark", "thol", "nalsarovar", "outside", "city", min_hits=1),
+         lambda r, i: check(r, "remind", "set", "peak", min_hits=1)]},
     {"id": 11, "title": "Jaipur trip full planning chain",
      "steps": [
                "plan a 3 day jaipur trip from ahmedabad",
@@ -180,10 +180,10 @@ SCENARIOS = [
                "find a good budget hotel near the old city",
                "make a day by day itinerary"],
      "checks": [
-         lambda r, i: check(r, "jaipur,trip,day,flight", min_hits=2),
-         lambda r, i: check(r, "morning,window,flight", min_hits=2),
-         lambda r, i: check(r, "hotel,budget,old city", min_hits=2),
-         lambda r, i: check(r, "day,itinerary,morning,evening", min_hits=2)]},
+         lambda r, i: check(r, "jaipur", "trip", "day", "flight", min_hits=2),
+         lambda r, i: check(r, "morning", "window", "flight", min_hits=2),
+         lambda r, i: check(r, "hotel", "budget", "old city", min_hits=2),
+         lambda r, i: check(r, "day", "itinerary", "morning", "evening", min_hits=2)]},
     {"id": 12, "title": "Goa weekend full plan",
      "steps": [
                "plan a weekend goa trip",
@@ -191,10 +191,10 @@ SCENARIOS = [
                "estimate the total budget for two people",
                "what are the must visit beaches"],
      "checks": [
-         lambda r, i: check(r, "goa,morning,window,flight", min_hits=3),
-         lambda r, i: check(r, "morning,window,flight", min_hits=2),
-         lambda r, i: check(r, "budget,total,two", min_hits=1),
-         lambda r, i: check(r, "beach,baga,anjuna,calangute,palolem", min_hits=2)]},
+         lambda r, i: check(r, "goa", "morning", "window", "flight", min_hits=3),
+         lambda r, i: check(r, "morning", "window", "flight", min_hits=2),
+         lambda r, i: check(r, "budget", "total", "two", min_hits=1),
+         lambda r, i: check(r, "beach", "baga", "anjuna", "calangute", "palolem", min_hits=2)]},
     {"id": 13, "title": "Weather deep chain",
      "steps": [
                "what is the weather in ahmedabad today",
@@ -202,10 +202,10 @@ SCENARIOS = [
                "should i plan an outdoor evening tomorrow",
                "what is the best time to visit ahmedabad weather wise"],
      "checks": [
-         lambda r, i: check(r, "celsius,rain,cloud,temperature", min_hits=1),
-         lambda r, i: check(r, "tomorrow,rain,cloud", min_hits=1),
-         lambda r, i: check(r, "outdoor,evening,plan,yes,no", min_hits=1),
-         lambda r, i: check(r, "weather,best,visit,winter,season", min_hits=1)]},
+         lambda r, i: check(r, "celsius", "rain", "cloud", "temperature", min_hits=1),
+         lambda r, i: check(r, "tomorrow", "rain", "cloud", min_hits=1),
+         lambda r, i: check(r, "outdoor", "evening", "plan", "yes", "no", min_hits=1),
+         lambda r, i: check(r, "weather", "best", "visit", "winter", "season", min_hits=1)]},
     {"id": 14, "title": "Cricket deep chain",
      "steps": [
                "when is india's next cricket match",
@@ -213,10 +213,10 @@ SCENARIOS = [
                "what is the venue",
                "who is india's best batsman in this series"],
      "checks": [
-         lambda r, i: check(r, "india,match,test,odi,t20", min_hits=2),
-         lambda r, i: check(r, "series,tour,bilateral", min_hits=1),
-         lambda r, i: check(r, "venue,stadium,ground", min_hits=1),
-         lambda r, i: check(r, "india,batsman,series,best", min_hits=1)]},
+         lambda r, i: check(r, "india", "match", "test", "odi", "t20", min_hits=2),
+         lambda r, i: check(r, "series", "tour", "bilateral", min_hits=1),
+         lambda r, i: check(r, "venue", "stadium", "ground", min_hits=1),
+         lambda r, i: check(r, "india", "batsman", "series", "best", min_hits=1)]},
     {"id": 15, "title": "Gold price deep chain",
      "steps": [
                "what is the gold rate in ahmedabad today",
@@ -224,10 +224,10 @@ SCENARIOS = [
                "is it a good time to buy gold jewellery",
                "what affects gold prices in india"],
      "checks": [
-         lambda r, i: check(r, "gold,rate,carat,22,24", min_hits=2),
-         lambda r, i: check(r, "rising,falling,up,down,week", min_hits=1),
-         lambda r, i: check(r, "buy,time,advice,good", min_hits=1),
-         lambda r, i: check(r, "gold,price,affect,dollar,inflation", min_hits=1)]},
+         lambda r, i: check(r, "gold", "rate", "carat", "22", "24", min_hits=2),
+         lambda r, i: check(r, "rising", "falling", "up", "down", "week", min_hits=1),
+         lambda r, i: check(r, "buy", "time", "advice", "good", min_hits=1),
+         lambda r, i: check(r, "gold", "price", "affect", "dollar", "inflation", min_hits=1)]},
     {"id": 16, "title": "EV scooter deep compare",
      "steps": [
                "deep research ola s1 pro vs ather 450x vs tvs iqube",
@@ -235,10 +235,10 @@ SCENARIOS = [
                "which is best value for money for daily commute",
                "what is the charging cost per month"],
      "checks": [
-         lambda r, i: check(r, "ola,ather,tvs", min_hits=2),
-         lambda r, i: check(r, "range,km,price,speed", min_hits=2),
-         lambda r, i: check(r, "value,best,commute,recommend", min_hits=2),
-         lambda r, i: check(r, "charging,month,electricity", min_hits=1)]},
+         lambda r, i: check(r, "ola", "ather", "tvs", min_hits=2),
+         lambda r, i: check(r, "range", "km", "price", "speed", min_hits=2),
+         lambda r, i: check(r, "value", "best", "commute", "recommend", min_hits=2),
+         lambda r, i: check(r, "charging", "month", "electricity", min_hits=1)]},
     {"id": 17, "title": "Budget phone camera deep chain",
      "steps": [
                "deep research moto g85 vs redmi note 14 vs iqoo z9",
@@ -246,10 +246,10 @@ SCENARIOS = [
                "how does the battery life compare",
                "final recommendation for under 20k"],
      "checks": [
-         lambda r, i: check(r, "moto,redmi,iqoo", min_hits=2),
-         lambda r, i: check(r, "camera,sensor,ois,megapixel", min_hits=2),
-         lambda r, i: check(r, "battery,mah,charging,hours", min_hits=1),
-         lambda r, i: check(r, "recommend,best,20k", min_hits=2)]},
+         lambda r, i: check(r, "moto", "redmi", "iqoo", min_hits=2),
+         lambda r, i: check(r, "camera", "sensor", "ois", "megapixel", min_hits=2),
+         lambda r, i: check(r, "battery", "mah", "charging", "hours", min_hits=1),
+         lambda r, i: check(r, "recommend", "best", "20k", min_hits=2)]},
     {"id": 18, "title": "ML laptop deep chain",
      "steps": [
                "best laptop under 60000 for ml work in india",
@@ -257,10 +257,10 @@ SCENARIOS = [
                "compare ram and storage options",
                "recommend one with reasons"],
      "checks": [
-         lambda r, i: check(r, "laptop,ram,ryzen,i5,16gb", min_hits=3),
-         lambda r, i: check(r, "gpu,deep learning,nvidia,required", min_hits=1),
-         lambda r, i: check(r, "ram,storage,ssd,512,16", min_hits=2),
-         lambda r, i: check(r, "recommend,best,reason", min_hits=1)]},
+         lambda r, i: check(r, "laptop", "ram", "ryzen", "i5", "16gb", min_hits=3),
+         lambda r, i: check(r, "gpu", "deep learning", "nvidia", "required", min_hits=1),
+         lambda r, i: check(r, "ram", "storage", "ssd", "512", "16", min_hits=2),
+         lambda r, i: check(r, "recommend", "best", "reason", min_hits=1)]},
     {"id": 19, "title": "ML course deep chain",
      "steps": [
                "deep research the best machine learning courses in 2026",
@@ -268,10 +268,10 @@ SCENARIOS = [
                "which is better for a working professional",
                "how much does it cost"],
      "checks": [
-         lambda r, i: check(r, "course,machine learning,fastai,coursera,deeplearning", min_hits=2),
-         lambda r, i: check(r, "fastai,deeplearning.ai,andrew", min_hits=2),
-         lambda r, i: check(r, "professional,better,working", min_hits=1),
-         lambda r, i: check(r, "cost,free,price", min_hits=1)]},
+         lambda r, i: check(r, "course", "machine learning", "fastai", "coursera", "deeplearning", min_hits=2),
+         lambda r, i: check(r, "fastai", "deeplearning.ai", "andrew", min_hits=2),
+         lambda r, i: check(r, "professional", "better", "working", min_hits=1),
+         lambda r, i: check(r, "cost", "free", "price", min_hits=1)]},
     {"id": 20, "title": "Local LLM on 4GB deep chain",
      "steps": [
                "can i run a local llm on my 4gb vm",
@@ -279,10 +279,10 @@ SCENARIOS = [
                "what quantized versions should i use",
                "is it fast enough for chat"],
      "checks": [
-         lambda r, i: check(r, "4gb,llm,model,ram,qwen,llama,phi,gemma", min_hits=2),
-         lambda r, i: check(r, "qwen,llama,phi,gemma,2gb,3gb", min_hits=2),
-         lambda r, i: check(r, "quant,q4,q5,gguf", min_hits=1),
-         lambda r, i: check(r, "fast,speed,token,chat", min_hits=1)]},
+         lambda r, i: check(r, "4gb", "llm", "model", "ram", "qwen", "llama", "phi", "gemma", min_hits=2),
+         lambda r, i: check(r, "qwen", "llama", "phi", "gemma", "2gb", "3gb", min_hits=2),
+         lambda r, i: check(r, "quant", "q4", "q5", "gguf", min_hits=1),
+         lambda r, i: check(r, "fast", "speed", "token", "chat", min_hits=1)]},
     {"id": 21, "title": "Astrophotography beginner chain",
      "steps": [
                "deep research best budget astrophotography setup for beginners in india",
@@ -290,10 +290,10 @@ SCENARIOS = [
                "what accessories are essential",
                "total budget estimate"],
      "checks": [
-         lambda r, i: check(r, "telescope,dslr,camera,budget", min_hits=3),
-         lambda r, i: check(r, "telescope,dslr,start,first", min_hits=2),
-         lambda r, i: check(r, "tripod,mount,adapter,accessor", min_hits=1),
-         lambda r, i: check(r, "budget,total", min_hits=1)]},
+         lambda r, i: check(r, "telescope", "dslr", "camera", "budget", min_hits=3),
+         lambda r, i: check(r, "telescope", "dslr", "start", "first", min_hits=2),
+         lambda r, i: check(r, "tripod", "mount", "adapter", "accessor", min_hits=1),
+         lambda r, i: check(r, "budget", "total", min_hits=1)]},
     {"id": 22, "title": "Handloom shops chain",
      "steps": [
                "research good handloom saree shops in ahmedabad",
@@ -301,10 +301,10 @@ SCENARIOS = [
                "i love handloom, where should mom and i go this weekend",
                "what is the price range there"],
      "checks": [
-         lambda r, i: check(r, "handloom,saree,shop,ahmedabad,law garden", min_hits=2),
-         lambda r, i: check(r, "review,rating,good", min_hits=1),
-         lambda r, i: check(r, "law garden,shop,weekend,recommend", min_hits=2),
-         lambda r, i: check(r, "price,range", min_hits=1)]},
+         lambda r, i: check(r, "handloom", "saree", "shop", "ahmedabad", "law garden", min_hits=2),
+         lambda r, i: check(r, "review", "rating", "good", min_hits=1),
+         lambda r, i: check(r, "law garden", "shop", "weekend", "recommend", min_hits=2),
+         lambda r, i: check(r, "price", "range", min_hits=1)]},
     {"id": 23, "title": "Restaurant deep chain",
      "steps": [
                "best restaurants near gandhinagar for family dinner",
@@ -312,10 +312,10 @@ SCENARIOS = [
                "under 1500 for two people",
                "do i need to book a table"],
      "checks": [
-         lambda r, i: check(r, "restaurant,gandhinagar,dinner", min_hits=2),
-         lambda r, i: check(r, "veg,review,jain", min_hits=1),
-         lambda r, i: check(r, "1500,under,recommend", min_hits=2),
-         lambda r, i: check(r, "book,table,reservation", min_hits=1)]},
+         lambda r, i: check(r, "restaurant", "gandhinagar", "dinner", min_hits=2),
+         lambda r, i: check(r, "veg", "review", "jain", min_hits=1),
+         lambda r, i: check(r, "1500", "under", "recommend", min_hits=2),
+         lambda r, i: check(r, "book", "table", "reservation", min_hits=1)]},
     {"id": 24, "title": "Street food trail chain",
      "steps": [
                "what is the best street food in ahmedabad old city",
@@ -323,10 +323,10 @@ SCENARIOS = [
                "which stops are famous on instagram",
                "what should i not miss"],
      "checks": [
-         lambda r, i: check(r, "food,street,ahmedabad,manek,vadapav", min_hits=2),
-         lambda r, i: check(r, "trail,walk,manek chowk,route,start", min_hits=1),
-         lambda r, i: check(r, "instagram,famous,viral", min_hits=1),
-         lambda r, i: check(r, "miss,must,try", min_hits=1)]},
+         lambda r, i: check(r, "food", "street", "ahmedabad", "manek", "vadapav", min_hits=2),
+         lambda r, i: check(r, "trail", "walk", "manek chowk", "route", "start", min_hits=1),
+         lambda r, i: check(r, "instagram", "famous", "viral", min_hits=1),
+         lambda r, i: check(r, "miss", "must", "try", min_hits=1)]},
     {"id": 25, "title": "Heritage walk deep browse",
      "steps": [
                "deep research the ahmedabad heritage walk",
@@ -334,10 +334,10 @@ SCENARIOS = [
                "how much does it cost and how to book",
                "is it worth it for tourists"],
      "checks": [
-         lambda r, i: check(r, "heritage,walk,book,route", min_hits=3),
-         lambda r, i: check(r, "route,hour,km,duration", min_hits=1),
-         lambda r, i: check(r, "cost,book,ticket", min_hits=1),
-         lambda r, i: check(r, "worth,tourist,recommend", min_hits=1)]},
+         lambda r, i: check(r, "heritage", "walk", "book", "route", min_hits=3),
+         lambda r, i: check(r, "route", "hour", "km", "duration", min_hits=1),
+         lambda r, i: check(r, "cost", "book", "ticket", min_hits=1),
+         lambda r, i: check(r, "worth", "tourist", "recommend", min_hits=1)]},
     {"id": 26, "title": "Old city history chain",
      "steps": [
                "research the history of ahmedabad old city",
@@ -345,10 +345,10 @@ SCENARIOS = [
                "who built the city and when",
                "what is the unesco status"],
      "checks": [
-         lambda r, i: check(r, "ahmedabad,pol,history,sultan,ahmed shah", min_hits=2),
-         lambda r, i: check(r, "pol,old,century,year", min_hits=1),
-         lambda r, i: check(r, "ahmed shah,built,1411,founded", min_hits=1),
-         lambda r, i: check(r, "unesco,world heritage", min_hits=1)]},
+         lambda r, i: check(r, "ahmedabad", "pol", "history", "sultan", "ahmed shah", min_hits=2),
+         lambda r, i: check(r, "pol", "old", "century", "year", min_hits=1),
+         lambda r, i: check(r, "ahmed shah", "built", "1411", "founded", min_hits=1),
+         lambda r, i: check(r, "unesco", "world heritage", min_hits=1)]},
     {"id": 27, "title": "Salary savings plan chain",
      "steps": [
                "my salary comes on the 1st of every month",
@@ -356,10 +356,10 @@ SCENARIOS = [
                "how much will i have after 6 months",
                "suggest a better saving split between emergency and investment"],
      "checks": [
-         lambda r, i: check(r, "1st,salary,save,20%", min_hits=2),
-         lambda r, i: check(r, "60000,20%,save", min_hits=1),
-         lambda r, i: check(r, "72,12,000,12000,72000", min_hits=1),
-         lambda r, i: check(r, "emergency,investment,split,suggest", min_hits=2)]},
+         lambda r, i: check(r, "1st", "salary", "save", "20%", min_hits=2),
+         lambda r, i: check(r, "60000", "20%", "save", min_hits=1),
+         lambda r, i: check(r, "72", "12", "000", "12000", "72000", min_hits=1),
+         lambda r, i: check(r, "emergency", "investment", "split", "suggest", min_hits=2)]},
     {"id": 28, "title": "Mom birthday gift chain",
      "steps": [
                "my mom's birthday is 12 september and she loves handloom sarees",
@@ -367,10 +367,10 @@ SCENARIOS = [
                "compare two options with prices",
                "which one should i buy and when"],
      "checks": [
-         lambda r, i: check(r, "september,12,handloom,saree", min_hits=2),
-         lambda r, i: check(r, "5000,gift,option", min_hits=2),
-         lambda r, i: check(r, "compare,price", min_hits=1),
-         lambda r, i: check(r, "buy,recommend,when", min_hits=1)]},
+         lambda r, i: check(r, "september", "12", "handloom", "saree", min_hits=2),
+         lambda r, i: check(r, "5000", "gift", "option", min_hits=2),
+         lambda r, i: check(r, "compare", "price", min_hits=1),
+         lambda r, i: check(r, "buy", "recommend", "when", min_hits=1)]},
     {"id": 29, "title": "Goa trip budget chain",
      "steps": [
                "estimate a 3 day goa trip budget from ahmedabad for two people",
@@ -378,10 +378,10 @@ SCENARIOS = [
                "what is the cheapest month to go",
                "any budget airline deals"],
      "checks": [
-         lambda r, i: check(r, "budget,flight,hotel,goa,total", min_hits=3),
-         lambda r, i: check(r, "flight,hotel,food,breakdown", min_hits=2),
-         lambda r, i: check(r, "month,cheap,season", min_hits=1),
-         lambda r, i: check(r, "airline,deal,indigo,spicejet", min_hits=1)]},
+         lambda r, i: check(r, "budget", "flight", "hotel", "goa", "total", min_hits=3),
+         lambda r, i: check(r, "flight", "hotel", "food", "breakdown", min_hits=2),
+         lambda r, i: check(r, "month", "cheap", "season", min_hits=1),
+         lambda r, i: check(r, "airline", "deal", "indigo", "spicejet", min_hits=1)]},
     {"id": 30, "title": "Dentist reminder deep chain",
      "steps": [
                "remind me about my dentist appointment on 25 aug at 11 am",
@@ -389,10 +389,10 @@ SCENARIOS = [
                "what else do i have on my calendar that week",
                "remind me again but make it a voice reminder"],
      "checks": [
-         lambda r, i: check(r, "remind,dentist,11,25,set", min_hits=2),
-         lambda r, i: check(r, "day before,24,earlier,remind", min_hits=1),
-         lambda r, i: check(r, "calendar,august,nothing,mom", min_hits=1),
-         lambda r, i: check(r, "remind,voice,set", min_hits=1)]},
+         lambda r, i: check(r, "remind", "dentist", "11", "25", "set", min_hits=2),
+         lambda r, i: check(r, "day before", "24", "earlier", "remind", min_hits=1),
+         lambda r, i: check(r, "calendar", "august", "nothing", "mom", min_hits=1),
+         lambda r, i: check(r, "remind", "voice", "set", min_hits=1)]},
     {"id": 31, "title": "Call Mom deep chain",
      "steps": [
                "remind me to call mom at 7 pm today",
@@ -400,10 +400,10 @@ SCENARIOS = [
                "set a follow up for next sunday",
                "what is the best time to call mom on sunday"],
      "checks": [
-         lambda r, i: check(r, "remind,7,call,mom,set", min_hits=2),
-         lambda r, i: check(r, "ask,health,family,suggest", min_hits=1),
-         lambda r, i: check(r, "sunday,follow,set", min_hits=1),
-         lambda r, i: check(r, "sunday,call,time,best", min_hits=1)]},
+         lambda r, i: check(r, "remind", "7", "call", "mom", "set", min_hits=2),
+         lambda r, i: check(r, "ask", "health", "family", "suggest", min_hits=1),
+         lambda r, i: check(r, "sunday", "follow", "set", min_hits=1),
+         lambda r, i: check(r, "sunday", "call", "time", "best", min_hits=1)]},
     {"id": 32, "title": "Focus session deep chain",
      "steps": [
                "start focos 25m allow github",
@@ -411,10 +411,10 @@ SCENARIOS = [
                "how many times did i drift",
                "stop the focus session"],
      "checks": [
-         lambda r, i: check(r, "focus,25,github,start,already active", min_hits=2),
-         lambda r, i: check(r, "drift,nudge,back,focus", min_hits=1),
-         lambda r, i: check(r, "drift,times,count,1", min_hits=1),
-         lambda r, i: check(r, "focus,stop,ended,min", min_hits=1)]},
+         lambda r, i: check(r, "focus", "25", "github", "start", "already active", min_hits=2),
+         lambda r, i: check(r, "drift", "nudge", "back", "focus", min_hits=1),
+         lambda r, i: check(r, "drift", "times", "count", "1", min_hits=1),
+         lambda r, i: check(r, "focus", "stop", "ended", "min", min_hits=1)]},
     {"id": 33, "title": "Tracker deep chain",
      "steps": [
                "set up a daily tracker for bookmyshow events in ahmedabad",
@@ -422,10 +422,10 @@ SCENARIOS = [
                "can you make it weekly instead",
                "show me all my active trackers"],
      "checks": [
-         lambda r, i: check(r, "tracker,daily,bookmyshow,ahmedabad,set", min_hits=2),
-         lambda r, i: check(r, "tracker,check,every,morning,details", min_hits=2),
-         lambda r, i: check(r, "weekly,changed,updated", min_hits=1),
-         lambda r, i: check(r, "tracker,active,list", min_hits=1)]},
+         lambda r, i: check(r, "tracker", "daily", "bookmyshow", "ahmedabad", "set", min_hits=2),
+         lambda r, i: check(r, "tracker", "check", "every", "morning", "details", min_hits=2),
+         lambda r, i: check(r, "weekly", "changed", "updated", min_hits=1),
+         lambda r, i: check(r, "tracker", "active", "list", min_hits=1)]},
     {"id": 34, "title": "Identity + profile deep chain",
      "steps": [
                "who are you",
@@ -433,10 +433,10 @@ SCENARIOS = [
                "which of those is most important to remember",
                "rate my profile completeness"],
      "checks": [
-         lambda r, i: check(r, "friday,assistant,companion,memory", min_hits=2),
-         lambda r, i: check(r, "dentist,gandhinagar,salary,handloom,mom,astronomy", min_hits=2),
-         lambda r, i: check(r, "important,remember,priority", min_hits=1),
-         lambda r, i: check(r, "rate,complete,profile", min_hits=1)]},
+         lambda r, i: check(r, "friday", "assistant", "companion", "memory", min_hits=2),
+         lambda r, i: check(r, "dentist", "gandhinagar", "salary", "handloom", "mom", "astronomy", min_hits=2),
+         lambda r, i: check(r, "important", "remember", "priority", min_hits=1),
+         lambda r, i: check(r, "rate", "complete", "profile", min_hits=1)]},
     {"id": 35, "title": "Memory correction deep chain",
      "steps": [
                "i actually live in ahmedabad not gandhinagar",
@@ -444,10 +444,10 @@ SCENARIOS = [
                "what else do you have wrong about me",
                "fix everything"],
      "checks": [
-         lambda r, i: check(r, "ahmedabad,correct,updated,noted", min_hits=2),
-         lambda r, i: check(r, "ahmedabad,live", min_hits=1),
-         lambda r, i: check(r, "wrong,review,check", min_hits=1),
-         lambda r, i: check(r, "fixed,updated,corrected", min_hits=1)]},
+         lambda r, i: check(r, "ahmedabad", "correct", "updated", "noted", min_hits=2),
+         lambda r, i: check(r, "ahmedabad", "live", min_hits=1),
+         lambda r, i: check(r, "wrong", "review", "check", min_hits=1),
+         lambda r, i: check(r, "fixed", "updated", "corrected", min_hits=1)]},
     {"id": 36, "title": "Beliefs deep chain",
      "steps": [
                "show me what you believe about me",
@@ -455,10 +455,10 @@ SCENARIOS = [
                "rate them by confidence",
                "which one should i correct"],
      "checks": [
-         lambda r, i: check(r, "believe,prefer,like,you", min_hits=2),
-         lambda r, i: check(r, "strong,confidence,highest", min_hits=1),
-         lambda r, i: check(r, "rate,confidence", min_hits=1),
-         lambda r, i: check(r, "correct,review,suggest", min_hits=1)]},
+         lambda r, i: check(r, "believe", "prefer", "like", "you", min_hits=2),
+         lambda r, i: check(r, "strong", "confidence", "highest", min_hits=1),
+         lambda r, i: check(r, "rate", "confidence", min_hits=1),
+         lambda r, i: check(r, "correct", "review", "suggest", min_hits=1)]},
     {"id": 37, "title": "Saree tension deep chain",
      "steps": [
                "i love handloom sarees but i dont like kanjivaram",
@@ -466,10 +466,10 @@ SCENARIOS = [
                "how should i explain it to mom",
                "how do i explain my saree preference to family"],
      "checks": [
-         lambda r, i: check(r, "handloom,kanjivaram,note,understand", min_hits=2),
-         lambda r, i: check(r, "contradict,tension,different", min_hits=1),
-         lambda r, i: check(r, "explain,mom,suggest,talk", min_hits=1),
-         lambda r, i: check(r, "explain,family,preference,saree", min_hits=1)]},
+         lambda r, i: check(r, "handloom", "kanjivaram", "note", "understand", min_hits=2),
+         lambda r, i: check(r, "contradict", "tension", "different", min_hits=1),
+         lambda r, i: check(r, "explain", "mom", "suggest", "talk", min_hits=1),
+         lambda r, i: check(r, "explain", "family", "preference", "saree", min_hits=1)]},
     {"id": 38, "title": "Multi-hop gift chain",
      "steps": [
                "what should i gift mom combining her birthday, her handloom love, and my budget",
@@ -477,10 +477,10 @@ SCENARIOS = [
                "when should i buy it",
                "how should i wrap and present it"],
      "checks": [
-         lambda r, i: check(r, "handloom,birthday,budget,saree,gift", min_hits=3),
-         lambda r, i: check(r, "plan,recommend,saree,stall", min_hits=2),
-         lambda r, i: check(r, "when,buy,september,before", min_hits=1),
-         lambda r, i: check(r, "wrap,present,box,gift", min_hits=1)]},
+         lambda r, i: check(r, "handloom", "birthday", "budget", "saree", "gift", min_hits=3),
+         lambda r, i: check(r, "plan", "recommend", "saree", "stall", min_hits=2),
+         lambda r, i: check(r, "when", "buy", "september", "before", min_hits=1),
+         lambda r, i: check(r, "wrap", "present", "box", "gift", min_hits=1)]},
     {"id": 39, "title": "Scooter research + email chain",
      "steps": [
                "research best scooters under 1.5 lakh in india",
@@ -488,10 +488,10 @@ SCENARIOS = [
                "which is best for city commute",
                "draft an email to my brother recommending one"],
      "checks": [
-         lambda r, i: check(r, "scooter,iqube,ather,ola,recommend", min_hits=2),
-         lambda r, i: check(r, "range,km,price", min_hits=2),
-         lambda r, i: check(r, "commute,city,best", min_hits=1),
-         lambda r, i: check(r, "brother,draft,email,recommend", min_hits=2)]},
+         lambda r, i: check(r, "scooter", "iqube", "ather", "ola", "recommend", min_hits=2),
+         lambda r, i: check(r, "range", "km", "price", min_hits=2),
+         lambda r, i: check(r, "commute", "city", "best", min_hits=1),
+         lambda r, i: check(r, "brother", "draft", "email", "recommend", min_hits=2)]},
     {"id": 40, "title": "Top news deep chain",
      "steps": [
                "summarize the top news today in india",
@@ -499,10 +499,10 @@ SCENARIOS = [
                "any tech news",
                "any sports news"],
      "checks": [
-         lambda r, i: check(r, "india,news,today,government,cricket,pm", min_hits=2),
-         lambda r, i: check(r, "biggest,top,main", min_hits=1),
-         lambda r, i: check(r, "tech,ai,startup,phone", min_hits=1),
-         lambda r, i: check(r, "sports,cricket,match", min_hits=1)]},
+         lambda r, i: check(r, "india", "news", "today", "government", "cricket", "pm", min_hits=2),
+         lambda r, i: check(r, "biggest", "top", "main", min_hits=1),
+         lambda r, i: check(r, "tech", "ai", "startup", "phone", min_hits=1),
+         lambda r, i: check(r, "sports", "cricket", "match", min_hits=1)]},
     {"id": 41, "title": "Stock market deep chain",
      "steps": [
                "how is the stock market doing today in india",
@@ -510,10 +510,10 @@ SCENARIOS = [
                "is nifty near its all time high",
                "should i invest now"],
      "checks": [
-         lambda r, i: check(r, "nifty,sensex,market,point,percent", min_hits=2),
-         lambda r, i: check(r, "sector,bank,it,pharma,up", min_hits=1),
-         lambda r, i: check(r, "high,record,all time", min_hits=1),
-         lambda r, i: check(r, "invest,advice,now", min_hits=1)]},
+         lambda r, i: check(r, "nifty", "sensex", "market", "point", "percent", min_hits=2),
+         lambda r, i: check(r, "sector", "bank", "it", "pharma", "up", min_hits=1),
+         lambda r, i: check(r, "high", "record", "all time", min_hits=1),
+         lambda r, i: check(r, "invest", "advice", "now", min_hits=1)]},
     {"id": 42, "title": "In-hand salary deep chain",
      "steps": [
                "if my ctc is 18 lakhs per year, what is my approximate in-hand salary per month",
@@ -521,10 +521,10 @@ SCENARIOS = [
                "what if i use 80c deductions",
                "which regime is better for me"],
      "checks": [
-         lambda r, i: check(r, "lakh,in-hand,month,approx", min_hits=2),
-         lambda r, i: check(r, "tax,slab", min_hits=1),
-         lambda r, i: check(r, "80c,deduction,save", min_hits=1),
-         lambda r, i: check(r, "regime,new,old,better", min_hits=1)]},
+         lambda r, i: check(r, "lakh", "in-hand", "month", "approx", min_hits=2),
+         lambda r, i: check(r, "tax", "slab", min_hits=1),
+         lambda r, i: check(r, "80c", "deduction", "save", min_hits=1),
+         lambda r, i: check(r, "regime", "new", "old", "better", min_hits=1)]},
     {"id": 43, "title": "Tax saving deep chain",
      "steps": [
                "how can i save tax in india with 18 lakh ctc in 2026",
@@ -532,10 +532,10 @@ SCENARIOS = [
                "compare nps vs ppf vs elss",
                "recommend a split"],
      "checks": [
-         lambda r, i: check(r, "tax,80c,nps,saving", min_hits=2),
-         lambda r, i: check(r, "80c,elss,ppf,nps,life", min_hits=1),
-         lambda r, i: check(r, "nps,ppf,elss,compare", min_hits=2),
-         lambda r, i: check(r, "recommend,split,allocate", min_hits=1)]},
+         lambda r, i: check(r, "tax", "80c", "nps", "saving", min_hits=2),
+         lambda r, i: check(r, "80c", "elss", "ppf", "nps", "life", min_hits=1),
+         lambda r, i: check(r, "nps", "ppf", "elss", "compare", min_hits=2),
+         lambda r, i: check(r, "recommend", "split", "allocate", min_hits=1)]},
     {"id": 44, "title": "Book discussion deep chain",
      "steps": [
                "explain quantum entanglement like i am 12",
@@ -543,10 +543,10 @@ SCENARIOS = [
                "what is superposition",
                "is it useful for computers"],
      "checks": [
-         lambda r, i: check(r, "entangl,particle,state,measure,simpl", min_hits=2),
-         lambda r, i: check(r, "example,coin,spin,analogy", min_hits=1),
-         lambda r, i: check(r, "superposition,both,state", min_hits=1),
-         lambda r, i: check(r, "computer,quantum,useful", min_hits=1)]},
+         lambda r, i: check(r, "entangl", "particle", "state", "measure", "simpl", min_hits=2),
+         lambda r, i: check(r, "example", "coin", "spin", "analogy", min_hits=1),
+         lambda r, i: check(r, "superposition", "both", "state", min_hits=1),
+         lambda r, i: check(r, "computer", "quantum", "useful", min_hits=1)]},
     {"id": 45, "title": "Weekend value plan deep chain",
      "steps": [
                "plan a value for money weekend in ahmedabad this saturday",
@@ -554,10 +554,10 @@ SCENARIOS = [
                "what is the total cost",
                "make a schedule"],
      "checks": [
-         lambda r, i: check(r, "weekend,ahmedabad,value,plan", min_hits=3),
-         lambda r, i: check(r, "planetarium,astronom,science city", min_hits=1),
-         lambda r, i: check(r, "total,cost", min_hits=1),
-         lambda r, i: check(r, "schedule,morning,evening,time", min_hits=1)]},
+         lambda r, i: check(r, "weekend", "ahmedabad", "value", "plan", min_hits=3),
+         lambda r, i: check(r, "planetarium", "astronom", "science city", min_hits=1),
+         lambda r, i: check(r, "total", "cost", min_hits=1),
+         lambda r, i: check(r, "schedule", "morning", "evening", "time", min_hits=1)]},
     {"id": 46, "title": "Multi-turn context deep chain",
      "steps": [
                "what is the capital of gujarat",
@@ -566,11 +566,11 @@ SCENARIOS = [
                "how far is it from the capital",
                "what is it famous for"],
      "checks": [
-         lambda r, i: check(r, "gandhinagar,capital", min_hits=1),
-         lambda r, i: check(r, "ahmedabad,largest", min_hits=1),
-         lambda r, i: check(r, "million,lakh,crore,population", min_hits=1),
-         lambda r, i: check(r, "km,distance,30,far", min_hits=1),
-         lambda r, i: check(r, "famous,textile,food,heritage", min_hits=1)]},
+         lambda r, i: check(r, "gandhinagar", "capital", min_hits=1),
+         lambda r, i: check(r, "ahmedabad", "largest", min_hits=1),
+         lambda r, i: check(r, "million", "lakh", "crore", "population", min_hits=1),
+         lambda r, i: check(r, "km", "distance", "30", "far", min_hits=1),
+         lambda r, i: check(r, "famous", "textile", "food", "heritage", min_hits=1)]},
     {"id": 47, "title": "Itinerary artifact deep chain",
      "steps": [
                "create a 2 day ahmedabad itinerary artifact with heritage and food",
@@ -578,10 +578,10 @@ SCENARIOS = [
                "estimate the cost per day",
                "what should i book in advance"],
      "checks": [
-         lambda r, i: check(r, "day,itinerary,heritage,food", min_hits=3),
-         lambda r, i: check(r, "morning,evening,day", min_hits=2),
-         lambda r, i: check(r, "cost,day", min_hits=1),
-         lambda r, i: check(r, "book,advance,ticket", min_hits=1)]},
+         lambda r, i: check(r, "day", "itinerary", "heritage", "food", min_hits=3),
+         lambda r, i: check(r, "morning", "evening", "day", min_hits=2),
+         lambda r, i: check(r, "cost", "day", min_hits=1),
+         lambda r, i: check(r, "book", "advance", "ticket", min_hits=1)]},
     {"id": 48, "title": "Ahmedabad vs Surat deep chain",
      "steps": [
                "deep research ahmedabad vs surat for living in 2026",
@@ -590,11 +590,11 @@ SCENARIOS = [
                "which is better for a young professional",
                "give your final verdict"],
      "checks": [
-         lambda r, i: check(r, "ahmedabad,surat,job,cost,living", min_hits=3),
-         lambda r, i: check(r, "job,industry,opportunity", min_hits=1),
-         lambda r, i: check(r, "rent,cost,living", min_hits=1),
-         lambda r, i: check(r, "young,professional,better", min_hits=1),
-         lambda r, i: check(r, "verdict,recommend,choose", min_hits=1)]},
+         lambda r, i: check(r, "ahmedabad", "surat", "job", "cost", "living", min_hits=3),
+         lambda r, i: check(r, "job", "industry", "opportunity", min_hits=1),
+         lambda r, i: check(r, "rent", "cost", "living", min_hits=1),
+         lambda r, i: check(r, "young", "professional", "better", min_hits=1),
+         lambda r, i: check(r, "verdict", "recommend", "choose", min_hits=1)]},
     {"id": 49, "title": "Open source LLM deep chain",
      "steps": [
                "deep research the best open source llms for a coding assistant in 2026",
@@ -603,11 +603,11 @@ SCENARIOS = [
                "which one runs best on a budget gpu",
                "what is my final pick"],
      "checks": [
-         lambda r, i: check(r, "llm,open source,qwen,llama,deepseek,rank", min_hits=2),
-         lambda r, i: check(r, "1,2,3,best,recommend", min_hits=2),
-         lambda r, i: check(r, "benchmark,score,compare", min_hits=1),
-         lambda r, i: check(r, "gpu,vram,budget,rtx", min_hits=1),
-         lambda r, i: check(r, "pick,final,recommend", min_hits=1)]},
+         lambda r, i: check(r, "llm", "open source", "qwen", "llama", "deepseek", "rank", min_hits=2),
+         lambda r, i: check(r, "1", "2", "3", "best", "recommend", min_hits=2),
+         lambda r, i: check(r, "benchmark", "score", "compare", min_hits=1),
+         lambda r, i: check(r, "gpu", "vram", "budget", "rtx", min_hits=1),
+         lambda r, i: check(r, "pick", "final", "recommend", min_hits=1)]},
     {"id": 50, "title": "Health + focus deep chain",
      "steps": [
                "i have trouble focusing after lunch, what helps",
@@ -615,10 +615,10 @@ SCENARIOS = [
                "what should i eat for better afternoon focus",
                "set a reminder for my afternoon walk"],
      "checks": [
-         lambda r, i: check(r, "focus,lunch,walk,sleep,water,recommend", min_hits=2),
-         lambda r, i: check(r, "walk,nap,better,compare", min_hits=1),
-         lambda r, i: check(r, "eat,protein,food,sugar,lunch", min_hits=1),
-         lambda r, i: check(r, "remind,walk,set", min_hits=1)]}
+         lambda r, i: check(r, "focus", "lunch", "walk", "sleep", "water", "recommend", min_hits=2),
+         lambda r, i: check(r, "walk", "nap", "better", "compare", min_hits=1),
+         lambda r, i: check(r, "eat", "protein", "food", "sugar", "lunch", min_hits=1),
+         lambda r, i: check(r, "remind", "walk", "set", min_hits=1)]}
 ]
 
 async def run_scenario(base: str, sc: dict, log_lines: list) -> dict:
