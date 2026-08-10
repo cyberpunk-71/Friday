@@ -478,13 +478,19 @@ op_friday_chattest() {
   log friday_chattest
   local q="${FRIDAY_TEST_QUERY:-who is mayor of ahmedabad}"
   say "query: ${q}"
-  # POST a real chat turn and capture the SSE stream
-  out=$(curl -s -N -m 90 -X POST "http://127.0.0.1:${PORT}/api/chat" \
-        -H 'Content-Type: application/json' \
-        -d "{\"text\":\"${q}\"}" 2>&1 | head -c 5000)
+  # POST a real chat turn and capture the FULL SSE stream to a file — the old
+  # `| head -c 5000` killed curl with SIGPIPE mid-stream, which cancelled the
+  # FastAPI generator BEFORE SETTLE → the turn was never saved to history.
+  local tmp
+  tmp=$(mktemp)
+  curl -s -N -m 120 -X POST "http://127.0.0.1:${PORT}/api/chat" \
+       -H 'Content-Type: application/json' \
+       -d "{\"text\":\"${q}\"}" > "$tmp" 2>&1 || true
   say "REPLY_STREAM_START"
-  printf '%s' "$out" | sed 's/^/  /' | while IFS= read -r l; do OUT="${OUT}${l}\n"; done
+  OUT="${OUT}$(head -c 8000 "$tmp" | sed 's/^/  /')\n"
   say "REPLY_STREAM_END"
+  say "DONE_EVENT: $(grep -o '"type":"done"[^}]*}' "$tmp" | tail -1 | head -c 900)"
+  rm -f "$tmp"
   # pull the saved turn (model + latency + cost)
   hist=$(curl -s -m 10 "http://127.0.0.1:${PORT}/api/chat/history?limit=1" 2>&1 | head -c 1500)
   say "LAST_TURN: ${hist}"
