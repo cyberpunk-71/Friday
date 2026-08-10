@@ -226,6 +226,23 @@ op_friday_health() {
   if health_ok; then ok friday_health; else fail friday_health; fi
 }
 
+op_friday_uidiff() {
+  log friday_uidiff
+  say "ws HEAD: $(cd "$WS" && git rev-parse --short HEAD 2>&1)"
+  say "ws dirty: $(cd "$WS" && git status --porcelain 2>&1 | head -8 | tr '\n' '|')"
+  say "runtime app.js sha: $(sha256sum "$RUNTIME/ui/app.js" 2>&1 | awk '{print $1}')"
+  say "ws app.js sha:      $(sha256sum "$WS/ui/app.js" 2>&1 | awk '{print $1}')"
+  say "diff: $(diff -q "$WS/ui/app.js" "$RUNTIME/ui/app.js" >/dev/null 2>&1 && echo SAME || echo DIFFERENT)"
+  say "runtime index.html sha: $(sha256sum "$RUNTIME/ui/index.html" 2>&1 | awk '{print $1}')"
+  say "ws index.html sha:      $(sha256sum "$WS/ui/index.html" 2>&1 | awk '{print $1}')"
+  say "runtime css sha: $(sha256sum "$RUNTIME/ui/style.css" 2>&1 | awk '{print $1}')"
+  say "ws css sha:      $(sha256sum "$WS/ui/style.css" 2>&1 | awk '{print $1}')"
+  say "cachebust in runtime index: $(grep -o 'v=[0-9.]*' "$RUNTIME/ui/index.html" 2>/dev/null | head -2 | tr '\n' ' ')"
+  say "md() list line runtime: $(grep -n 'replace(/\\^\\[-\\*\\]' "$RUNTIME/ui/app.js" 2>/dev/null | head -1)"
+  say "md() list line ws:      $(grep -n 'replace(/\\^\\[-\\*\\]' "$WS/ui/app.js" 2>/dev/null | head -1)"
+  ok friday_uidiff
+}
+
 op_friday_test() {
   log friday_test
   if [ ! -x "$RUNTIME/.venv/bin/python" ]; then
