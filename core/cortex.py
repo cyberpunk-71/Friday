@@ -136,7 +136,8 @@ PIPELINE_NARRATION_RE = re.compile(
     r"(?m)^\s*(?:#{1,4}\s*)?(?:\*\*)?"
     r"(based on (?:the )?(?:live )?(?:search results|data|news)|"
     r"here'?s what (?:the )?(?:live )?(?:search|data|news|results) (?:shows|found|says)|"
-    r"the (?:live )?search results (?:show|reveal|indicate|tell us))"
+    r"the (?:live )?search results (?:show|reveal|indicate|tell us|don'?t|doesn'?t)|"
+    r"the live search results)"
     r"[^\n]*$", re.I)
 LEADING_NAME_RE = re.compile("^\\s*(?:\\*\\*)?\\s*friday(?:\\s*[–—-]\\s*Δ)?\\s*(?:\\*\\*)?\\s*:?\\s*\\n?", re.I)
 HR_RE = re.compile(r"(?m)^\s*(?:-{3,}|\*{3,}|_{3,})\s*$")
@@ -190,6 +191,7 @@ def polish_history(reply: str) -> str:
         return reply
     t = BANNED_HEADER_LEAD_RE.sub("", reply)
     t = BANNED_HEADER_RE.sub("", t)
+    t = PIPELINE_NARRATION_RE.sub("", t)
     t = HR_RE.sub("", t)
     t = _drop_dump_tables(t)
     return t.strip()[:1200]
