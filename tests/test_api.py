@@ -260,3 +260,38 @@ def test_extension_zip_download(client):
     names = z.namelist()
     assert "manifest.json" in names
     assert "background.js" in names
+
+
+def test_llm_switch_rejects_key_in_model_field(client, db):
+    """Pasting an API key into the model field must be rejected (it corrupted
+    llm.model on the VM and made every Gemini call 404 first)."""
+    r = client.post("/api/admin/llm", json={"scope": "chat", "provider": "gemini",
+                                            "model": "AQ.Ab8RN6Lacr4NGYgsiWAs5IGFfBgeDWLud1yP9srvsdv4u7qzWw"})
+    assert r.status_code == 400
+    assert "API key" in r.json()["detail"]
+    # and nothing got saved
+    assert db.get_setting("llm.model") is None
+
+
+def test_configure_self_heals_key_in_model(client, db):
+    """Saving any key clears a key that previously leaked into llm.*.model."""
+    db.set_setting("llm.model", "AQ.Ab8RN6Lacr4NGYgsiWAs5IGFfBgeDWLud1yP9srvsdv4u7qzWw")
+    db.set_setting("llm.research.model", "sk-abc1234567890")
+    r = client.post("/api/admin/models/configure",
+                    json={"provider": "deepseek", "scope": "default", "api_key": "sk-valid1234567890"})
+    assert r.status_code == 200
+    assert db.get_setting("llm.model") is None
+    assert db.get_setting("llm.research.model") is None
+
+
+def test_overview_marks_chat_provider_key(client, db):
+    """provider_keys rows carry is_chat so the UI can highlight the live
+    chat model (the keys list showed deepseek 'active' and confused users)."""
+    db.exec("INSERT INTO provider_keys(provider,scope,api_key,active,source,created_ts,updated_ts)"
+            " VALUES('deepseek','default','sk-abc1234567890',1,'admin',?,?)", (1, 1))
+    db.exec("INSERT INTO provider_keys(provider,scope,api_key,active,source,created_ts,updated_ts)"
+            " VALUES('gemini','default','AIza-abc1234567890',1,'admin',?,?)", (1, 1))
+    db.set_setting("llm.provider", "gemini")
+    ov = client.get("/api/admin/overview").json()
+    by_prov = {k["provider"]: k["is_chat"] for k in ov["provider_keys"]}
+    assert by_prov == {"deepseek": False, "gemini": True}

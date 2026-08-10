@@ -702,8 +702,9 @@ class Cortex:
     @staticmethod
     def _provider_key(text: str) -> dict | None:
         """'this is my new deep seek api kes sk-9f3c... for research use case'
-        Gemini keys look like 'AIzaSy...' — both are recognized here."""
-        m = re.search(r"\b(sk-[A-Za-z0-9_\-]{6,}|AIza[A-Za-z0-9_\-]{20,})\b", text)
+        Gemini keys look like 'AIzaSy...' (old) or 'AQ.Ab8RN...' (new) —
+        all three formats are recognized here."""
+        m = re.search(r"\b(sk-[A-Za-z0-9_\-]{6,}|AIza[A-Za-z0-9_\-]{20,}|AQ\.[A-Za-z0-9_.\-]{20,})\b", text)
         if not m:
             return None
         low = text.lower()
@@ -713,7 +714,7 @@ class Cortex:
             if s in low:
                 scope = s
                 break
-        if key.startswith("AIza"):
+        if key.startswith("AIza") or key.startswith("AQ."):
             provider = "gemini"
         elif "voice" in low and "deep" not in low:
             provider = "voice"

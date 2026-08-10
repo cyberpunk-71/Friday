@@ -27,6 +27,25 @@ from .config import cfg
 from .cortex import Cortex, bus
 from .db import get_db
 from .focus import Focus
+
+# API-key-shaped strings (DeepSeek sk-…, old Gemini AIza…, new Gemini AQ.Ab…)
+# must never be stored as a MODEL name — pasting a key into the model field
+# is the #1 admin-panel confusion
+KEYLIKE_RE = re.compile(r"^(sk-[A-Za-z0-9_\-]{6,}|AIza[A-Za-z0-9_\-]{20,}|AQ\.[A-Za-z0-9_.\-]{20,})$")
+
+
+def _clear_keylike_models(db) -> list[str]:
+    """Self-heal: if any llm.*.model setting holds an API key (user pasted
+    the key into the model field), clear it so the provider uses its default
+    model chain."""
+    fixed = []
+    for scope in ("", "research", "books", "eval"):
+        key = f"llm{'.' + scope if scope else ''}.model"
+        val = db.get_setting(key, "") or ""
+        if KEYLIKE_RE.match(val):
+            db.set_setting(key, None)
+            fixed.append(key)
+    return fixed
 from .genome import Genome
 from .hermes import Hermes
 from .obs import audit
@@ -207,6 +226,8 @@ async def admin_overview(request: Request, _: bool = Depends(_admin_auth)):
     }
     keys = db.q("SELECT provider,scope,substr(api_key,1,4)||'••••'||substr(api_key,-4) masked,"
                 "active,source FROM provider_keys")
+    chat_provider = db.get_setting("llm.provider", "deepseek")
+    keys = [dict(k, is_chat=(k["provider"] == chat_provider)) for k in keys]
     return {
         "version": APP_VERSION, "model": os.environ.get("DEEPSEEK_MODEL", "deepseek-chat"),
         "llm_model": (getattr(request.app.state.cortex.llm, "model", "")
@@ -306,6 +327,8 @@ async def models_configure(payload: dict, request: Request, _: bool = Depends(_a
         os.environ["GROQ_API_KEY"] = key
         from .voice import Voice
         # voice reads the key live on next TTS call
+    # self-heal: if a key ever leaked into a model field, clear it now
+    _clear_keylike_models(db)
     return {"ok": True, "provider": provider, "scope": scope, "masked": f"••••{key[-4:]}"}
 
 
@@ -320,6 +343,8 @@ async def admin_llm_switch(payload: dict, request: Request, _: bool = Depends(_a
     model = str(payload.get("model", "") or "").strip()
     if provider not in ("deepseek", "gemini"):
         raise HTTPException(400, "provider must be deepseek or gemini")
+    if model and KEYLIKE_RE.match(model):
+        raise HTTPException(400, "that looks like an API key, not a model name — paste it in the key field instead")
     if scope == "chat":
         db.set_setting("llm.provider", provider)
         db.set_setting("llm.model", model or None)

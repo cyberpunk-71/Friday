@@ -1218,13 +1218,14 @@ function renderOverview(ov) {
     <div class="card"><h3>Genome (recent commits)</h3><div class="cards">${(ov.genome_log || []).map(g => `<div class="hist-row"><span class="chip">${esc(g.sha)}</span><span>${esc(g.msg)}</span><span class="dim">${esc(g.date)}</span></div>`).join("")}</div></div>`;
 }
 function renderKeys(keys) {
-  $("#provider-keys").innerHTML = `<h4 style="margin:10px 0">Provider keys (masked)</h4>` +
-    keys.map(k => `<div class="hist-row"><span class="chip ${k.provider === "gemini" ? "alpha" : ""}">${esc(k.provider)}</span><span class="chip">${esc(k.scope)}</span><span>${esc(k.masked)}</span><span class="chip ${k.active ? "good" : "bad"}">${k.active ? "active" : "off"}</span><span class="dim">${esc(k.source)}</span></div>`).join("") || `<div class="dim">no keys — configure below or just tell Friday your key in chat</div>`;
+  $("#provider-keys").innerHTML = `<h4 style="margin:10px 0">Provider keys (masked) — <span class="dim">★ = live chat model</span></h4>` +
+    keys.map(k => `<div class="hist-row ${k.is_chat ? "key-live" : ""}"><span class="chip ${k.provider === "gemini" ? "alpha" : ""}">${esc(k.provider)}</span><span class="chip">${esc(k.scope)}</span><span>${esc(k.masked)}</span>${k.is_chat ? `<span class="chip good">★ chat</span>` : ""}<span class="chip ${k.active ? "good" : "bad"}">${k.active ? "key active" : "off"}</span><span class="dim">${esc(k.source)}</span></div>`).join("") || `<div class="dim">no keys — configure below or just tell Friday your key in chat</div>`;
 }
 
 /* Active chat model — shows what chat runs on, switch without re-entering keys */
 /* Model routing — per-scope provider + model (chat/research/books/eval) */
 const ROUTE_LABEL = { chat: "Chat", research: "Deep research", books: "Books", eval: "Eval 50" };
+const KEYLIKE_RE = /^(sk-[A-Za-z0-9_-]{6,}|AIza[A-Za-z0-9_-]{20,}|AQ\.[A-Za-z0-9_.-]{20,})$/;
 function loadLlmRouting(ov) {
   try {
     const scopes = (ov && ov.llm_scopes) || {};
@@ -1232,7 +1233,8 @@ function loadLlmRouting(ov) {
       const scope = row.dataset.scope;
       const cfg = scopes[scope] || {};
       const prov = (scope === "chat" ? cfg.provider : (cfg.provider || (scopes.chat && scopes.chat.provider) || "deepseek")) || "deepseek";
-      const model = cfg.model || "";
+      let model = cfg.model || "";
+      if (KEYLIKE_RE.test(model)) model = "";   // a key leaked into the model field — never show it
       row.querySelector(".route-provider").value = prov;
       row.querySelector(".route-model").value = model;
       const st = row.querySelector(".route-status");
@@ -1249,6 +1251,10 @@ $$(".route-apply").forEach(btn => btn.addEventListener("click", async () => {
   const provider = row.querySelector(".route-provider").value;
   const model = row.querySelector(".route-model").value.trim();
   const st = row.querySelector(".route-status");
+  if (KEYLIKE_RE.test(model)) {
+    st.innerHTML = `<span class="chip bad">✗ that looks like an API key — paste it in the key field above instead</span>`;
+    return;
+  }
   st.textContent = "applying…";
   try {
     const r = await api("/api/admin/llm", { method: "POST", body: JSON.stringify({ scope, provider, model }) });

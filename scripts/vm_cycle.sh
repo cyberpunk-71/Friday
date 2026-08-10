@@ -243,6 +243,37 @@ op_friday_uidiff() {
   ok friday_uidiff
 }
 
+op_friday_llmfix() {
+  log friday_llmfix
+  # clear API keys that leaked into llm.*.model settings (admin confusion fix)
+  OUT="${OUT}$( cd "$RUNTIME" && .venv/bin/python - <<'PY'
+import json, os, re, sqlite3
+dbp = os.path.join(os.getcwd(), "data", "friday.db")
+if not os.path.exists(dbp):
+    print("no db at", dbp); raise SystemExit(0)
+KEYLIKE = re.compile(r"^(sk-[A-Za-z0-9_-]{6,}|AIza[A-Za-z0-9_-]{20,}|AQ\.[A-Za-z0-9_.-]{20,})$")
+con = sqlite3.connect(dbp)
+rows = con.execute("SELECT key, value FROM settings WHERE key LIKE 'llm.%'").fetchall()
+fixed = []
+for k, v in rows:
+    try:
+        val = json.loads(v)
+    except Exception:
+        val = v
+    if isinstance(val, str) and KEYLIKE.match(val):
+        con.execute("DELETE FROM settings WHERE key=?", (k,))
+        fixed.append(k)
+con.commit()
+print("llm.provider now:", end=" ")
+row = con.execute("SELECT value FROM settings WHERE key='llm.provider'").fetchone()
+print(json.loads(row[0]) if row else "unset")
+print("cleared key-like model settings:", fixed if fixed else "none")
+con.close()
+PY
+)\n"
+  ok friday_llmfix
+}
+
 op_friday_test() {
   log friday_test
   if [ ! -x "$RUNTIME/.venv/bin/python" ]; then
@@ -561,6 +592,7 @@ case "$CMD" in
   friday_deploy)      run_ops friday_deploy friday_test friday_nginx ;;
   friday_health)      run_ops friday_health ;;
   friday_uidiff)      run_ops friday_uidiff ;;
+  friday_llmfix)      run_ops friday_llmfix ;;
   friday_test)        run_ops friday_test ;;
   friday_nginx)       run_ops friday_nginx ;;
   friday_diagnose)    run_ops friday_diagnose ;;

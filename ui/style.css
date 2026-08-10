@@ -657,3 +657,9 @@ table.data th { background: var(--card-2); font-size: 10px; text-transform: uppe
 @media (max-width: 700px) {
   .route-label { width: 100%; }
 }
+
+/* live chat key highlight in the keys list */
+.key-live {
+  border-color: rgba(31, 157, 97, .45) !important;
+  background: rgba(31, 157, 97, .06);
+}
