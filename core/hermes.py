@@ -27,6 +27,18 @@ LIVE_TRIGGERS = re.compile(
     r"how much|what's the|research)\b", re.I)
 
 FOCUS_TRIGGERS = re.compile(r"\b(start|begin|stop|end)\b.*\bfoc\w*|foc\w*\b.*\b(min|allow)", re.I)
+
+# Questions ABOUT Friday itself — never search the web for these. The old
+# behavior fired "who are you" → news dump → giant irrelevant table. Chatty
+# greetings are included so "hii" stays instant.
+SELF_REF = re.compile(
+    r"\b(who are you|what are you|tell me about yourself|about yourself|"
+    r"your name|what can you do|what do you do|how do you work|"
+    r"what (is|are) (you|friday)|what'?s your (name|purpose|job)|"
+    r"introduce yourself|are you (a |an )?(bot|ai|robot|human|assistant)|"
+    r"your (features|capabilities|skills|abilities|limits)|"
+    r"^(hi|hii+|hello|hey|yo|hola|namaste|good (morning|afternoon|evening)|"
+    r"sup|hiya)[!. ]*$)\b", re.I)
 TASK_TRIGGERS = re.compile(
     r"\b(research|draft|email|write|build|create|organi[sz]e|summar|download|send|"
     r"save|convert|make|generate|buy|purchase|pay|remind|track|monitor)\b", re.I)
@@ -65,6 +77,11 @@ class Hermes:
     async def prefire(self, text: str, city: str = "ahmedabad") -> PreFire:
         pf = PreFire()
         max_usd = cfg.get("hermes.pre_fire_max_usd", 0.0002)
+        # questions about Friday itself (or plain greetings) must never burn a
+        # search — the model then felt obliged to dump the results as a table
+        if SELF_REF.search(text):
+            pf.error = "self-referential question — web search skipped"
+            return pf
         if not LIVE_TRIGGERS.search(text):
             pf.error = f"no live trigger in: {text[:80]!r}"
             return pf

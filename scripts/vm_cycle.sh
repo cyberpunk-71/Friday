@@ -554,6 +554,7 @@ case "$CMD" in
   friday_setkey)      run_ops friday_setkey ;;
   friday_deploy)      run_ops friday_deploy friday_test friday_nginx ;;
   friday_health)      run_ops friday_health ;;
+  friday_uidiff)      run_ops friday_uidiff ;;
   friday_test)        run_ops friday_test ;;
   friday_nginx)       run_ops friday_nginx ;;
   friday_diagnose)    run_ops friday_diagnose ;;

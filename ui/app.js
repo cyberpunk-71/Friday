@@ -24,36 +24,69 @@ async function api(path, opts = {}) {
   return ct.includes("application/json") ? res.json() : res.text();
 }
 
-/* markdown-lite renderer: code, bold, italic, links, lists, tables, headers */
+/* markdown-lite renderer: code, bold, italic, links, lists, tables, headers.
+   Line-based single pass — no nested <ul>/<ol> re-wrapping bugs, no empty
+   list items, tables parsed properly, "---" dropped (model uses them as
+   essay dividers). */
 function md(text) {
   if (!text) return "";
   let t = esc(text);
   const blocks = [];
-  t = t.replace(/```([\s\S]*?)```/g, (_, c) => { blocks.push(`<pre>${c}</pre>`); return `\u0000${blocks.length - 1}\u0000`; });
-  t = t.replace(/`([^`]+)`/g, "<code>$1</code>");
-  t = t.replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
-  t = t.replace(/\*([^*]+)\*/g, "<i>$1</i>");
-  t = t.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
-  const tableRe = /((?:\|.*\|(?:\r?\n|$))+)/g;
-  t = t.replace(tableRe, (tb) => {
-    const rows = tb.trim().split("\n").map(r => r.replace(/^\||\|$/g, "").split("|").map(c => c.trim()));
-    if (rows.length < 2) return tb;
-    const head = rows[0], body = rows.slice(2).length ? rows.slice(2) : rows.slice(1);
-    return "<table><thead><tr>" + head.map(h => `<th>${h}</th>`).join("") + "</tr></thead><tbody>" +
-      body.map(r => "<tr>" + r.map(c => `<td>${c}</td>`).join("") + "</tr>").join("") + "</tbody></table>";
-  });
-  t = t.replace(/^### (.*)$/gm, "<h4>$1</h4>");
-  t = t.replace(/^## (.*)$/gm, "<h4>$1</h4>");
-  t = t.replace(/^# (.*)$/gm, "<h4>$1</h4>");
-  t = t.replace(/^[-*] (.*)$/gm, "<li>$1</li>");
-  t = t.replace(/(<li>[\s\S]*?<\/li>)/g, (m) => `<ul>${m}</ul>`);
-  t = t.replace(/<\/ul><ul>/g, "");
-  t = t.replace(/^(\d+)\. (.*)$/gm, "<li>$2</li>");
-  t = t.replace(/(<li>[\s\S]*?<\/li>)/g, (m) => `<ol>${m}</ol>`);
-  t = t.replace(/<\/ol><ol>/g, "");
-  t = t.split("\n").map(p => p.trim() ? (p.startsWith("<") ? p : `<p>${p}</p>`) : "").join("");
-  t = t.replace(/\u0000(\d+)\u0000/g, (_, i) => blocks[+i]);
-  return t;
+  t = t.replace(/```([\s\S]*?)```/g, (_, c) => { blocks.push(`<pre>${c.trim()}</pre>`); return `\u0000${blocks.length - 1}\u0000`; });
+  t = t.replace(/`([^`\n]+)`/g, "<code>$1</code>");
+  t = t.replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>");
+  t = t.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<i>$2</i>");
+  t = t.replace(/\[([^\]\n]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  const isTableRow = (l) => /^\s*\|.*\|\s*$/.test(l);
+  const lines = t.split("\n");
+  let out = "", inUl = false, inOl = false, listBuf = [];
+  const flushList = () => {
+    if (listBuf.length) out += `<${inUl ? "ul" : "ol"}>${listBuf.join("")}</${inUl ? "ul" : "ol"}>`;
+    listBuf = []; inUl = false; inOl = false;
+  };
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i], l = raw.trim();
+    if (!l) { flushList(); continue; }
+    if (isTableRow(l)) {
+      const rows = [];
+      while (i < lines.length && isTableRow(lines[i])) { rows.push(lines[i].trim()); i++; }
+      i--;
+      if (rows.length >= 2) {
+        const sep = /^\|?[\s:|-]+\|?$/.test(rows[1].replace(/\|/g, "")) ? 1 : -1;
+        const split = (r) => r.replace(/^\||\|$/g, "").split("|").map(c => c.trim());
+        const head = split(rows[0]);
+        const body = (sep >= 0 ? rows.slice(2) : rows.slice(1)).map(split);
+        if (head.length && head.some(h => h)) {
+          flushList();
+          out += "<table><thead><tr>" + head.map(h => `<th>${h}</th>`).join("") + "</tr></thead><tbody>" +
+            body.map(r => "<tr>" + r.map(c => `<td>${c}</td>`).join("") + "</tr>").join("") + "</tbody></table>";
+          continue;
+        }
+      }
+      // degenerate pipe line — fall through as plain paragraph
+    }
+    const h = /^(#{1,4})\s+(.*)$/.exec(l);
+    if (h) { flushList(); out += `<h4>${h[2]}</h4>`; continue; }
+    if (/^(-{3,}|\*{3,}|_{3,})$/.test(l)) { flushList(); continue; }
+    // stray empty bullet markers ("- " alone) — model artifact, drop silently
+    if (/^[-*•]\s*$/.test(l)) { continue; }
+    const ul = /^[-*•]\s+(\S.*)$/.exec(l);
+    const ol = /^(\d+)[.)]\s+(\S.*)$/.exec(l);
+    if (ul) {
+      if (!inUl) { flushList(); inUl = true; }
+      listBuf.push(`<li>${ul[1]}</li>`);
+      continue;
+    }
+    if (ol) {
+      if (!inOl) { flushList(); inOl = true; }
+      listBuf.push(`<li>${ol[2]}</li>`);
+      continue;
+    }
+    flushList();
+    out += `<p>${l}</p>`;
+  }
+  flushList();
+  return out.replace(/\u0000(\d+)\u0000/g, (_, i) => blocks[+i]);
 }
 
 function toast(msg, kind = "") {

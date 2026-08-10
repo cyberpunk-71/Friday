@@ -21,7 +21,7 @@ from .db import get_db
 from .embedder import Embedder
 from .extract import HeuristicExtractor, LLMExtractor
 from .hands import Hands
-from .hermes import Hermes
+from .hermes import Hermes, SELF_REF
 from .loom import Loom
 from .obs import Tracer, log_turn
 from .providers import LLMProvider, make_llm, make_search
@@ -103,6 +103,75 @@ def strip_card_tags(prose: str) -> tuple[str, list[dict]]:
         return ""
     clean = re.sub(r"<card>(.*?)</card>", _pull, prose, flags=re.S)
     return clean, cards
+
+
+# Robotic meta-headers the model keeps emitting despite prompt rules. Any line
+# that is EXACTLY one of these (markdown or bold variants) gets deleted by
+# polish_reply — the content underneath stays, just without the bot-y title.
+BANNED_HEADER_RE = re.compile(
+    r"(?m)^\s*(?:#{1,4}\s*)?(?:\*\*)?"
+    r"(the honest answer|what i can confirm|what i'?d suggest|the short answer|"
+    r"the direct answer|the caveat|what i'?d do|what i would do|the common thread|"
+    r"here'?s what(?:'?s| is) happening|what this tells us|what the data (?:shows|tells us)|"
+    r"the bottom line|in summary|key takeaways|the takeaway|the good news|the bad news|"
+    r"who am i|live search results|what i found|here'?s what i found)"
+    r"(?:\*\*)?\s*:?\s*\??\s*$", re.I)
+# lines that ANNOUNCE the pipeline ("Based on the live search results, ...")
+# get dropped whole — even mid-paragraph, they are exactly the robotic
+# narration the user hates
+PIPELINE_NARRATION_RE = re.compile(
+    r"(?m)^\s*(?:#{1,4}\s*)?(?:\*\*)?"
+    r"(based on (?:the )?(?:live )?(?:search results|data|news)|"
+    r"here'?s what (?:the )?(?:live )?(?:search|data|news|results) (?:shows|found|says)|"
+    r"the (?:live )?search results (?:show|reveal|indicate|tell us))"
+    r"[^\n]*$", re.I)
+LEADING_NAME_RE = re.compile("^\\s*(?:\\*\\*)?\\s*friday(?:\\s*[–—-]\\s*Δ)?\\s*(?:\\*\\*)?\\s*:?\\s*\\n?", re.I)
+HR_RE = re.compile(r"(?m)^\s*(?:-{3,}|\*{3,}|_{3,})\s*$")
+TABLE_BLOCK_RE = re.compile(r"(?m)^((?:\|.*\|\s*\n?)+)")
+
+
+def polish_reply(reply: str) -> str:
+    """Post-generation safety net so the USER never sees the model's slips:
+    robotic meta-headers, 'FRIDAY' name openers, --- dividers, and dump-tables
+    of search results. Content is kept — only the bot-y furniture is removed."""
+    if not reply:
+        return reply
+    t = reply
+    # leading self-name header ("**FRIDAY**" / "FRIDAY:\n") — never show it
+    t = LEADING_NAME_RE.sub("", t, count=1)
+    # robotic meta-header lines (case-insensitive, md or bold variants)
+    t = BANNED_HEADER_RE.sub("", t)
+    # pipeline narration sentences ("Based on the live search results, ...")
+    t = PIPELINE_NARRATION_RE.sub("", t)
+    # horizontal rules — the model uses them to structure essays
+    t = HR_RE.sub("", t)
+    # tables that dump search results: header cell "Source" or any cell
+    # containing a URL ⇒ clearly a results dump, drop the whole block.
+    # Small genuine comparison tables (e.g. 2 phones side by side) survive.
+    def _drop_dump(m):
+        block = m.group(1)
+        rows = [r.strip() for r in block.strip().splitlines() if "|" in r]
+        if len(rows) >= 2 and ("| ---" in block or "|---|---" in block or "|-" in block):
+            cells = " ".join(rows).lower()
+            if "http" in cells or "source" in cells or "takeaway" in cells \
+               or "date" in cells and len(rows) >= 3:
+                return ""
+        return m.group(0)
+    t = TABLE_BLOCK_RE.sub(_drop_dump, t)
+    # collapse 3+ blank lines, strip leading/trailing whitespace
+    t = re.sub(r"\n{3,}", "\n\n", t)
+    t = re.sub(r"[ \t]+\n", "\n", t)
+    return t.strip()
+
+
+def polish_history(reply: str) -> str:
+    """Same cleanup applied to assistant replies fed back as conversation
+    history — stops the model from imitating the old robotic style."""
+    if not reply:
+        return reply
+    t = BANNED_HEADER_RE.sub("", reply)
+    t = HR_RE.sub("", t)
+    return t.strip()[:1200]
 
 
 # --------------------------------------------------------------------------- #
@@ -301,10 +370,17 @@ class Cortex:
             "- \"ahmedabad\" after \"events in ahmedabad\" means: the events in ahmedabad.\n"
             f"## SPECULATIVE PRE-FIRE (fetched at t+0 — real, current results)\n{prefire}\n"
             f"## PREFIRE WEB SNIPPET (live page content — cite it)\n{prefire_web[:4000]}\n"
-            "## LIVE DATA (mandatory)\n"
-            "- The sections labeled LIVE SEARCH RESULTS / PREFIRE WEB SNIPPET / "
-            "DEEP RESEARCH GROUNDING contain REAL data fetched seconds ago. Build "
-            "your answer from them. NEVER claim you lack data when they have entries.\n"
+            "## LIVE DATA (use ONLY when relevant)\n"
+            "- The user message may contain LIVE SEARCH RESULTS / PREFIRE WEB "
+            "SNIPPET / DEEP RESEARCH GROUNDING — REAL data fetched seconds ago.\n"
+            "- Use them ONLY if they directly answer the user's question. If they "
+            "are irrelevant (e.g. 'who are you' with news headlines attached), "
+            "IGNORE them completely and answer normally.\n"
+            "- NEVER enumerate, list, or dump the raw results, and NEVER say "
+            "'Based on the live search results' or 'here's what the data shows'.\n"
+            "- Weave at most 2-3 concrete facts from the data into natural prose, "
+            "citing inline when it supports a claim (e.g. \"TOI reported the film "
+            "opens this week\"). No tables of results. No 'I found these headlines'.\n"
             "- If a page 404'd or a search was thin, just answer from whatever IS "
             "there — one line of context, then the answer. No apology essays.\n"
             "- Local queries (movies, stores, events, food): give the best real "
@@ -312,13 +388,20 @@ class Cortex:
             "in the data, say what IS known (cinemas in the city, typical timings) "
             "and one concrete suggestion (e.g. 'BookMyShow app shows live showtimes').\n"
             "## VOICE (mandatory — this is the most important rule)\n"
-            "- Reply like a smart, warm friend. Natural flowing prose. No 'The Honest "
-            "Answer', no 'What I Can Confirm', no robotic section headers, no bullet-"
-            "point menus for everything.\n"
-            "- First sentence = the direct answer. Then the useful detail. Short "
-            "bullets only for real comparisons. NEVER quote raw JSON or tool output.\n"
+            "- Reply like a smart, warm friend. Natural flowing prose. FORBIDDEN "
+            "headers (using any is a failure): 'The Honest Answer', 'What I Can "
+            "Confirm', 'What I'd Suggest', 'The Short Answer', 'The Caveat', "
+            "'What I'd Do', 'The Common Thread', 'Here's What's Happening', "
+            "'The Bottom Line', 'Key Takeaways', 'Based on the Live Search Results'.\n"
+            "- NEVER open with your own name ('**FRIDAY**'). Never use '##' / '###' "
+            "headers or '---' dividers in chat. NO markdown tables — write prose, "
+            "short bullets only for real comparisons (3 options max).\n"
+            "- First sentence = the direct answer. Then the useful detail. NEVER "
+            "quote raw JSON or tool output.\n"
             "- Never narrate your internal pipeline (pre-fire, searches, 404s). Just "
             "give the answer.\n"
+            "- The conversation history includes older replies in an old style — "
+            "do NOT imitate them. Follow the current VOICE rules.\n"
             "## ANTI-FABRICATION (mandatory — fabricated answers are a BUG)\n"
             "- NEVER invent events, shows, prices, schedules, phone numbers, or URLs. "
             "If the pre-fire results do not contain the answer, say plainly: \"I couldn't "
@@ -375,7 +458,7 @@ class Cortex:
         for h in hist:
             if h["user_text"] and h["reply"]:
                 messages.append({"role": "user", "content": (h["user_text"] or "")[:800]})
-                messages.append({"role": "assistant", "content": (h["reply"] or "")[:1200]})
+                messages.append({"role": "assistant", "content": polish_history(h["reply"] or "")})
         messages.append({"role": "user", "content": text[:4000]})
         return messages
 
@@ -394,27 +477,27 @@ class Cortex:
         for h in hist:
             if h["user_text"] and h["reply"]:
                 messages.append({"role": "user", "content": (h["user_text"] or "")[:800]})
-                messages.append({"role": "assistant", "content": (h["reply"] or "")[:1200]})
+                messages.append({"role": "assistant", "content": polish_history(h["reply"] or "")})
         # LIVE GROUNDING: put the pre-fire results INSIDE the user message as
-        # a numbered fact list — the model cannot miss them here.
+        # background data. Framing is neutral on purpose: the model must use
+        # it ONLY when directly relevant — never dump it, never announce it.
         pf = self.hermes.prefire_state
         user_msg = text[:4000]
         if pf and pf.search:
-            lines = [f"{i+1}. {r.get('title','')[:150]} — {r.get('snippet','')[:180]} ({r.get('url','')[:120]})"
+            lines = [f"- {r.get('title','')[:150]} — {r.get('snippet','')[:180]} ({r.get('url','')[:120]})"
                      for i, r in enumerate(pf.search[:5])]
             user_msg = (
-                f"LIVE SEARCH RESULTS (fetched seconds ago, REAL data — use them):\n"
+                f"USER QUESTION: {text[:3000]}\n\n"
+                "BACKGROUND DATA (fetched seconds ago — use it ONLY if it "
+                "directly answers the question; otherwise ignore it entirely; "
+                "never list these items in your reply):\n"
                 + "\n".join(lines)
-                + f"\n\nUSER QUESTION: {text[:3000]}\n\n"
-                "IMPORTANT: Answer using the LIVE SEARCH RESULTS above. "
-                "Summarize them with sources even if they are news articles or "
-                "guides rather than ticketed listings. Never claim you lack data."
             )
         if pf and pf.web:
-            user_msg += f"\n\nLIVE PAGE SNIPPET (BookMyShow/events):\n{pf.web[:2500]}"
+            user_msg += f"\n\nPAGE SNIPPET (background):\n{pf.web[:2500]}"
         # deep-research grounding (multi-round tool loop output)
         if getattr(self, "_deep_grounding", ""):
-            user_msg += f"\n\nDEEP RESEARCH GROUNDING (multi-round tool results):\n{self._deep_grounding[:7000]}"
+            user_msg += f"\n\nRESEARCH NOTES (background, use only if relevant):\n{self._deep_grounding[:7000]}"
         messages.append({"role": "user", "content": user_msg})
         buffer, ctrl, prose_started = "", None, False
         stream = self.llm.stream(
@@ -916,9 +999,9 @@ class Cortex:
         # already handled above, so this runs for real questions only.
         self._deep_grounding = ""
         self._deep_rounds = 0
-        _is_deep = (len(text) > 25 and bool(re.search(
+        _is_deep = (len(text) > 25 and not SELF_REF.search(text) and bool(re.search(
             r"(research|compare|deep|analy|why|how|what|who|best|recommend|"
-            r"evaluate|explain|difference|vs|versus|investigate|find out|"
+            r"evaluate|explain|difference|vs\b|versus|investigate|find out|"
             r"events|weather|price|history|guide|review)", text.lower())))
         if _is_deep:
             dr = await self._deep_research(text, sense, city_hint)
@@ -958,6 +1041,9 @@ class Cortex:
         reply = re.sub(r'^(?:[," ]{0,3}"?(?:memory_writes|code_intent|config_deltas|ask|depth|tooliness|stakes)"?\s*:\s*\{[^\n]*\}|[," ]{0,3}"?(?:memory_writes|code_intent|config_deltas|ask|depth|tooliness|stakes)"?\s*:\s*\[[^\n]*\]|[," ]{0,3}"?(?:memory_writes|code_intent|config_deltas|ask|depth|tooliness|stakes)"?\s*:\s*[^,}\n]*),?\n?', "", reply, count=8)
         reply = re.sub(r'^[," ]{0,4}\}?\s*\n?', "", reply)
         reply = re.sub(r'^\n+', "", reply)
+        # post-generation polish: strip robotic meta-headers, 'FRIDAY' name
+        # openers, --- dividers and search-result dump tables (safety net)
+        reply = polish_reply(reply)
         reply, inline_cards = strip_card_tags(reply)
         cards.extend(inline_cards)
 

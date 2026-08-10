@@ -277,3 +277,46 @@ def test_buy_ingress_payment_gate(sim_seed, cortex, db):
     assert t["approval_kind"] == "payment"
     cards = [e["card"] for e in events if e["type"] == "card"]
     assert any(c["type"] == "approvals" for c in cards)
+
+
+def test_polish_reply_strips_robotic_furniture():
+    """The user-facing safety net: no name openers, no meta-headers, no ---
+    dividers, no search-result dump tables."""
+    from core.cortex import polish_reply
+    assert polish_reply("**FRIDAY**\n\nWho Am I?\n\nI am Friday.") == "I am Friday."
+    out = polish_reply(
+        "## Movies This Week\n\nBased on the live search results, here is what is "
+        "in the news:\n\n**DC** — new.\n\n---\n\n### The Caveat\n\nNews only.\n\n"
+        "---\n\n### What I'd Do\n\nCheck the app.")
+    assert "Based on the live search results" not in out
+    assert "The Caveat" not in out
+    assert "What I'd Do" not in out
+    assert "---" not in out
+    assert "**DC** — new." in out and "News only." in out and "Check the app." in out
+    # search-result dump table (Source column) → whole block dropped
+    out2 = polish_reply(
+        "| Result | Source | Date | Takeaway |\n| --- | --- | --- | --- |\n"
+        "| WHO study | HT | 08 Aug | risk |\n\nSo movement matters.")
+    assert "|" not in out2 and "So movement matters." in out2
+    # plain reply untouched
+    assert polish_reply("hey, all good here") == "hey, all good here"
+
+
+def test_self_ref_queries_skip_web_search(db):
+    """'who are you' / greetings must never burn a speculative search — the
+    model used to feel obliged to dump the results as a news table."""
+    import asyncio
+    from core.hermes import Hermes, SELF_REF
+    from core.providers import SimSearch
+    for q in ("who are you", "hii", "what can you do", "tell me about yourself",
+              "are you a bot", "hello"):
+        assert SELF_REF.search(q), q
+    h = Hermes(db, search=SimSearch())
+    for q in ("who are you", "hii", "hello", "what can you do"):
+        pf = asyncio.get_event_loop().run_until_complete(h.prefire(q))
+        assert not pf.search, (q, pf.search[:1])
+        assert "self-referential" in (pf.error or ""), (q, pf.error)
+    # real live questions must NOT be self-ref
+    for q in ("who is the mayor of ahmedabad", "what is the weather today",
+              "movies showing today"):
+        assert not SELF_REF.search(q), q
