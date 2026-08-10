@@ -667,7 +667,17 @@ db.set_setting("llm.auto_heal", None)
 print("routing -> gemini, model gemini-3.6-flash, heal timers reset")
 PY
 )\n"
-  ok friday_gemon
+  # the RUNNING server holds the old provider instance — restart core so
+  # make_llm() builds GeminiProvider from the DB at startup
+  sudo systemctl restart "$SVC"
+  if wait_health; then
+    say "restarted $SVC — now serving gemini"
+    ok friday_gemon
+  else
+    say "restart failed; journal:"
+OUT="${OUT}$( sudo journalctl -u "$SVC" -n 20 --no-pager 2>/dev/null | tail -20 )\n"
+    fail friday_gemon
+  fi
 }
 
 case "$CMD" in
