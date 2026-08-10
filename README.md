@@ -1,90 +1,176 @@
 # Friday–Δ
 
-**event-sourced · one-pass · code-acting · git-evolving**
+**Version 1.0.0** — a self-hosted, personal cognitive companion. One chat for
+research, memory, tasks, focus, books and settings — with a flagship,
+ADHD-friendly Focus Studio.
 
-Friday is a self-hosted personal cognitive companion — the fusion of two
-systems:
+> event-sourced · one-pass · code-acting · git-evolving · focus-first
 
-| | Anima (the cognitive core) | Donna / Hermes (the hands) |
+---
+
+## What Friday is
+
+Friday is the fusion of two systems that no longer exist separately:
+
+| | **Anima** (cognitive core) | **Donna / Hermes** (the hands) |
 |---|---|---|
-| Kept | smart chat, smart memory, beliefs α/β, VAD/EWMA affect, tensions, 4-probe recall | 73 declarative skills (SKILL.md), autonomy, task-execution posture |
-| Absorbed into | RIVER + LOOM + CORTEX (one streamed LLM call per turn) | genome/skills (procedures retrieved by demand) + HANDS DAG engine |
+| Kept | smart chat, smart memory, beliefs α/β, VAD affect, tensions, 4-probe recall | 73 declarative skills, task execution, operational rigor |
+| Absorbed into | RIVER + LOOM + CORTEX (one streamed LLM call per turn) | genome/skills + HANDS DAG engine |
 
-## The three phases (not seven stages)
+It runs entirely on **your own hardware** (a 2 vCPU / 4 GB Oracle Linux VM in
+the reference deployment), uses **DeepSeek or Google Gemini** as the brain,
+and is reachable from anywhere through a **Cloudflare quick tunnel**.
 
-1. **SENSE** — 0 LLM calls, ~18ms. One in-RAM retrieval walk: binary hamming
-   prefilter → fp16 matmul rerank → SQL probes → learned scorer →
-   12 guaranteed slots ([2 identity][2 corrections][2 open loops][4 topical]
-   [1 tension][1 procedure]) + deterministic NOW-block + constraint ledger.
-2. **SPEAK** — 1 LLM call, streaming. Tokens 1..40 are the ⟨CTRL⟩ control
-   block (depth·tooliness·emotionality·novelty·stakes + config_deltas +
-   memory_writes + code_intent + ask) parsed incrementally — side-effects
-   (dark mode, settings, FORGE tasks) fire BEFORE the prose finishes.
-3. **SETTLE** — async, invisible. River materialization, affect rollup,
-   spend ledger, turn audit.
+### Primary feature: the Focus Studio
+
+Focus is the front door of Friday. A three-page experience:
+
+1. **Today** (landing page) — greeting, daily quote, today's plan
+   (intentions), garden, streak, quick links, and a **Day Review** ritual.
+2. **Focus Studio** — the sanctuary: ritual "set the scene" intake
+   (task · first tiny step · reward · energy · mood · distraction
+   pre-commit), phase-aware timer (WARM-UP → DEEP WORK → FINAL PUSH),
+   breathing 4-7-8 breaks, brain-dump thought capture, pomodoro, brown
+   noise / rain soundscapes, comebacks, confetti celebration with a Focus
+   Score, and a **Focus Coach** — a conversational body double with full
+   session context.
+3. **Garden & Insights** — a 7-day garden that grows with completed
+   sessions, focus-score chart, thought bank, session journal, and gentle
+   "small wins".
+
+---
+
+## Feature highlights
+
+- **One-pass chat pipeline** — SENSE (0 LLM, ~18 ms) → SPEAK (1 streaming
+  LLM call) → SETTLE (async). Control side-effects ride in the first 40
+  tokens of the reply (⟨CTRL⟩ block), so "dark mode kar do" applies the
+  theme *while the reply is still streaming*.
+- **Event-sourced memory** — an append-only RIVER of events materializes
+  atoms, beliefs α/β, tensions and open loops. Corrections outrank
+  inferences (weight 10). Nothing is overwritten; everything is reversible.
+- **Live search & deep research** — Google News RSS → DuckDuckGo → Bing
+  chain (Tavily when a key is set), date-aware queries, city typo fixing,
+  and a multi-round tool loop (`web_search` / `web_read` /
+  `memory_recall`) for complex questions.
+- **Tasks with gates** — a DAG engine with postcondition assertions and two
+  blocking gates (payment, gmail send). Deterministic fallback steps mean
+  tasks always complete.
+- **Focus Coach** — a warm, ADHD-friendly conversational body double that
+  knows your task, why, energy, drifts and plan. It streams replies on
+  Gemini/DeepSeek from inside the session.
+- **Books** — upload any-size PDF, OCR → chunks → book-scoped RAG, quiz,
+  PPTX export.
+- **Genome** — the self lives in a git repo (`genome/`); nightly mutations
+  are replayed against a fitness corpus and only promoted if they improve.
+- **Admin panel** — every parameter live-tunable, provider keys
+  (DeepSeek/Gemini/Tavily/Brave/Exa/Groq/OpenRouter), model routing per
+  task (chat/research/books/eval), spend, turns, genome log, eval report.
+
+---
 
 ## Repository layout
 
 ```
-core/           the runtime (see core/README.md for module map)
-  app.py        FastAPI — chat SSE + Admin/Tasks/Memory/Focus/Books panels
-  cortex.py     one-pass pipeline + ⟨CTRL⟩ parsing + deterministic ingress
-  river.py      append-only event log → delta views (atoms/claims/tensions)
-  loom.py       the Weaver Walk (SENSE retrieval)
-  psyche.py     Bayesian claims, VAD lexicon, EWMA, posture, Brier
-  hands.py      DAG engine with postcondition assertions + 2 blocking gates
-  hermes.py     pre-fire, $ governor, blast-radius classifier, ask budget
-  tools.py      the `friday` SDK (12 verbs) + FORGE sandbox executor
-  books.py      no-limit upload → OCR → chunk → book-scoped RAG
-  focus.py      sessions, coalesced nudges, learned distraction patterns
-  voice.py      TTS + barge-in protocol (STT is client-side)
-  genome.py     git repo = the SELF; Gym replay fitness; canary/revert
-  worker.py     reminders, trackers, nightly compaction, dreamstate
-genome/         the SELF — git repo (prompts/ · verbs/ · policies/ · skills/ · scorer.json)
-ui/             the single chat-first surface (all panels inline)
-extension/      MV3 sensor: page learning + focus drift nudges
-scripts/        VM ops (vm_cycle.sh — repository_dispatch loop)
-infra/          systemd units + nginx for the VM
-tests/          116 tests — offline-deterministic (SimProvider + SimSearch)
-configs/        defaults.yaml (every knob live-editable) + search fixtures
+Friday/
+├── README.md               this file
+├── CHANGELOG.md            release history
+├── VERSION                 current version
+├── requirements.txt        Python dependencies
+├── run.py                  entrypoint (uvicorn on FRIDAY_PORT)
+├── .env.example            environment template
+│
+├── core/                   the runtime
+│   ├── app.py              FastAPI — chat SSE + all panels/API
+│   ├── cortex.py           one-pass pipeline, ⟨CTRL⟩ parsing, ingress
+│   ├── river.py            append-only event log → delta views
+│   ├── loom.py             SENSE retrieval walk (Weaver Walk)
+│   ├── psyche.py           beliefs, VAD, posture, tensions
+│   ├── hermes.py           pre-fire, governor, ask budget
+│   ├── hands.py            task DAG engine + blocking gates
+│   ├── focus.py            sessions, scores, coach data, analytics
+│   ├── providers.py        DeepSeek/Gemini + search providers
+│   ├── books.py            upload → OCR → RAG
+│   ├── genome.py           the evolving SELF
+│   ├── db.py               SQLite schema + helpers
+│   ├── worker.py           background SETTLE (reminders, trackers…)
+│   └── …                   tools.py, voice.py, embedder.py, extract.py …
+│
+├── ui/                     frontend (vanilla JS, no build step)
+│   ├── index.html          the app shell (Today/Chat/Focus/Garden…)
+│   ├── app.js              all UI logic
+│   ├── style.css           design system (SUNLIT + Focus Sanctuary)
+│   └── companion.png       the Friday companion avatar
+│
+├── tests/                  offline test suite (sim providers, no network)
+│   ├── eval_suite.py       50 complex scenarios × 4–5 steps (203 prompts)
+│   └── test_*.py           unit + integration tests
+│
+├── configs/                defaults.yaml, postures, search fixtures
+├── genome/                 the SELF — prompts, policies, skills, scorer
+├── extension/              MV3 Chrome sensor (page logging + focus nudges)
+├── infra/
+│   ├── github/workflows/   vm-ops.yml (repository_dispatch runner)
+│   ├── nginx/              reverse proxy
+│   └── systemd/            friday-core / friday-worker units
+├── scripts/
+│   ├── vm_cycle.sh         the VM operator (deploy/test/tunnel/eval…)
+│   └── report_result.py    workflow result reporter
+└── docs/                   THIS IS WHERE YOU ARE — start here
+    ├── ARCHITECTURE.md     system design, in depth
+    ├── SETUP.md            deploy your own Friday
+    ├── API.md              every endpoint
+    ├── USE_CASES.md        detailed, realistic use cases
+    ├── DATA_MODEL.md       database schema
+    ├── FOCUS.md            the flagship feature, end to end
+    ├── GENOME.md           the evolving self
+    └── OPERATIONS.md       VM ops, troubleshooting
 ```
 
-## Quickstart (sandbox / dev, no keys needed)
+## Quick start
 
 ```bash
-python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/python run.py          # → http://0.0.0.0:8000
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+cp .env.example .env            # set a DEEPSEEK_API_KEY or GEMINI_API_KEY
+.venv/bin/python run.py         # serves on FRIDAY_PORT (default 8010)
 ```
 
-No API keys configured ⇒ the deterministic **SimProvider** runs the whole
-pipeline (it still emits ⟨CTRL⟩ blocks and consumes the 12 slots), and
-**SimSearch** answers from `configs/search_fixtures.yaml`. Everything is
-therefore testable with zero egress. Set `DEEPSEEK_API_KEY` (+ optional
-`TAVILY_API_KEY`) for the live provider — same code path.
+Then open `http://localhost:8010`. The full self-hosted deployment
+(Oracle Linux VM, systemd, nginx, Cloudflare tunnel) is documented in
+[docs/SETUP.md](docs/SETUP.md).
 
-## Tests
+### Testing
 
 ```bash
-.venv/bin/python -m pytest tests/ -q     # 116 passed
+.venv/bin/python -m pytest tests/ -q      # 175+ tests, fully offline
+.venv/bin/python tests/eval_suite.py      # 50 scenarios × 4–5 steps
 ```
 
-- `test_use_cases.py` — the 30 end-to-end use cases, asserting *quality*
-  (right memory recalled, right gate raised, right view changed), not just
-  that output exists.
-- `test_providers.py` — DeepSeek wire-format verified against a local mock
-  SSE server (auth header, json_mode, error surfacing, usage math).
-- `test_river.py` — correction supremacy (user weight 10 vs inference 0.3),
-  tension immune system, evidence decay, undo.
-- `test_api.py` — every panel endpoint with valid-data assertions.
+## Documentation index
 
-## Branch / deploy discipline
+| Doc | What it covers |
+|---|---|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | The full system design: pipeline, memory, search, tasks, genome, UI |
+| [docs/SETUP.md](docs/SETUP.md) | Self-hosting guide (Oracle VM, systemd, nginx, tunnel) |
+| [docs/API.md](docs/API.md) | Every HTTP endpoint with payloads |
+| [docs/USE_CASES.md](docs/USE_CASES.md) | Detailed use cases + the 50-scenario eval suite |
+| [docs/DATA_MODEL.md](docs/DATA_MODEL.md) | SQLite schema, tables, key columns |
+| [docs/FOCUS.md](docs/FOCUS.md) | The flagship Focus Studio: data, scoring, coach, garden |
+| [docs/GENOME.md](docs/GENOME.md) | The evolving self (mutation, promotion, gym) |
+| [docs/OPERATIONS.md](docs/OPERATIONS.md) | VM operator commands + troubleshooting |
 
-- Work on `arena/<session>-friday`; never merge to `main` without a green
-  suite + a smoke of `/api/health` and one chat turn.
-- The genome directory contains its own inner git repo at runtime (created
-  lazily by `core/genome.py`). Do not commit `genome/.git` into the outer
-  repo (it is gitignored via the inner `.git` removal rule).
-- VM deployment follows the repository_dispatch pattern — see
-  `docs/VM_OPERATIONS.md`. `scripts/vm_cycle.sh` on the dispatched branch is
-  the operator; the workflow YAML must live on `main`.
-- Never commit `.env`, `data/`, `*.db` (gitignored).
+## Providers
+
+- **LLM**: DeepSeek (`deepseek-chat`, `deepseek-reasoner`) or Google Gemini
+  (`gemini-3.6-flash`, free-tier `gemini-3.5-flash` / `gemini-3.1-flash-lite`
+  / `gemini-3-flash-preview`). Configurable per task (chat / deep research /
+  books / eval) from the Admin panel, live-swappable, with automatic
+  failover and auto-heal if a key is rejected.
+- **Search**: Google News RSS → DuckDuckGo (html/lite) → Bing, with a
+  Tavily key as an optional upgrade. Results are used only when relevant —
+  never dumped into replies.
+
+## License
+
+Private project. All rights reserved unless stated otherwise in the repo.
