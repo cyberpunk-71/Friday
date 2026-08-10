@@ -587,3 +587,53 @@ table.data th { background: var(--card-2); font-size: 10px; text-transform: uppe
   .bd-idle, .bd-active { grid-template-columns: 1fr; }
   .bd-companion { position: static; }
 }
+
+/* ============================================================
+   FOCUS STUDIO — ADHD-FRIENDLY ADDITIONS
+   ============================================================ */
+.bd-adhd-tips { display: flex; flex-direction: column; gap: 6px; margin-top: 16px; }
+.bd-tip-chip {
+  background: var(--card-2); border: 1px dashed var(--line-2); border-radius: 999px;
+  padding: 5px 12px; font-size: 11px; color: var(--ink-soft); font-weight: 600;
+}
+.bd-field-hint { font-size: 11px; margin: 8px 0 2px; color: var(--dim); }
+.bd-field-hint b { color: var(--ink-soft); }
+#bd-just5 { margin-top: 8px; background: var(--card-2); }
+#bd-just5:hover { border-color: var(--accent); color: var(--accent); }
+
+.bd-mode-label {
+  display: inline-block; font-size: 10px; font-weight: 800; letter-spacing: .22em;
+  text-transform: uppercase; border-radius: 999px; padding: 3px 12px; margin-bottom: 8px;
+  background: var(--grad); color: #fff;
+}
+.bd-timer-card.break { border-color: rgba(14, 165, 164, .4); box-shadow: 0 0 0 4px rgba(14, 165, 164, .08), var(--shadow-card); }
+.bd-timer-card.break .bd-mode-label { background: var(--grad-teal); }
+.bd-first-step, .bd-reward { font-size: 12px; margin-top: 4px; line-height: 1.5; }
+.bd-reward { color: var(--accent); }
+.bd-round {
+  display: inline-block; margin-top: 8px; font-size: 10.5px; font-weight: 800;
+  letter-spacing: .12em; text-transform: uppercase; color: var(--accent);
+  background: rgba(255, 94, 58, .1); border-radius: 999px; padding: 3px 10px;
+}
+.btn.back { border-color: rgba(14, 165, 164, .4); color: var(--teal); font-weight: 800; }
+.btn.back:hover { background: rgba(14, 165, 164, .08); box-shadow: none; }
+.bd-ambient-on, .btn.ambient-on { border-color: var(--teal); color: var(--teal); }
+.bd-companion.onbreak { border-color: rgba(14, 165, 164, .35); box-shadow: 0 0 0 4px rgba(14, 165, 164, .08), var(--shadow-card); }
+
+/* 7-day chain (don't break the chain) */
+.bd-chain {
+  display: flex; gap: 8px; align-items: flex-end; justify-content: center;
+  background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+  padding: 14px 16px; margin-bottom: 12px; box-shadow: var(--shadow-card);
+}
+.chain-day { display: flex; flex-direction: column; align-items: center; gap: 5px; flex: 1; }
+.chain-bar {
+  width: 16px; border-radius: 6px 6px 3px 3px;
+  background: linear-gradient(180deg, #ff9a3d, #ff5e3a);
+  transition: height .4s ease;
+}
+.chain-day:first-child .chain-bar { background: linear-gradient(180deg, #34d399, #0ea5a4); }
+.chain-day span { font-size: 10px; font-weight: 800; color: var(--dim); letter-spacing: .05em; }
+
+/* gentle mode */
+.bd-check input { accent-color: var(--accent); }

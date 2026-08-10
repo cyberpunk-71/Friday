@@ -22,26 +22,56 @@ class Focus:
         return self.db.q1("SELECT * FROM focus_sessions WHERE status='active' "
                           "ORDER BY start_ts DESC LIMIT 1")
 
+    def _migrate_cols(self) -> None:
+        """Add columns added after launch (task, why, first_step, mode,
+        break_end_ts) to older DBs."""
+        cols = [r["name"] for r in self.db.q("PRAGMA table_info(focus_sessions)")]
+        for col, ddl in (("task", "TEXT"), ("why", "TEXT"), ("first_step", "TEXT"),
+                         ("mode", "TEXT NOT NULL DEFAULT 'work'"),
+                         ("break_end_ts", "REAL")):
+            if col not in cols:
+                try:
+                    self.db.exec(f"ALTER TABLE focus_sessions ADD COLUMN {col} {ddl}")
+                except Exception:
+                    pass
+
     def start(self, minutes: int = 25, allow: list | None = None, voice: bool = True,
-              task: str | None = None) -> dict:
+              task: str | None = None, why: str | None = None,
+              first_step: str | None = None) -> dict:
         if self.active():
             return {"ok": False, "error": "session already active"}
-        # migrate: task label column (older DBs don't have it)
-        cols = [r["name"] for r in self.db.q("PRAGMA table_info(focus_sessions)")]
-        if "task" not in cols:
-            try:
-                self.db.exec("ALTER TABLE focus_sessions ADD COLUMN task TEXT")
-            except Exception:
-                pass
+        self._migrate_cols()
         sid = self.db.exec(
-            "INSERT INTO focus_sessions(start_ts,target_min,status,allow_domains,drift_count,task)"
-            " VALUES(?,?, 'active',?,0,?)",
-            (time.time(), minutes, json.dumps(allow or []), task or None))
+            "INSERT INTO focus_sessions(start_ts,target_min,status,allow_domains,drift_count,"
+            "task,why,first_step,mode)"
+            " VALUES(?,?, 'active',?,0,?,?,?,'work')",
+            (time.time(), minutes, json.dumps(allow or []), task or None,
+             why or None, first_step or None))
         self.db.append_event("focus", "user", {"action": "start", "minutes": minutes,
                                                "allow": allow or [], "task": task,
+                                               "why": why, "first_step": first_step,
                                                "session_id": sid})
         return {"ok": True, "session_id": sid, "minutes": minutes,
-                "task": task, "ends_at": time.time() + minutes * 60}
+                "task": task, "why": why, "first_step": first_step,
+                "ends_at": time.time() + minutes * 60}
+
+    def set_mode(self, mode: str, break_min: int = 5) -> dict:
+        """work ↔ break. During break, drifts are NOT nudged (you're allowed
+        to wander on a break — that's the point)."""
+        s = self.active()
+        if not s:
+            return {"ok": False, "error": "no active session"}
+        if mode not in ("work", "break"):
+            return {"ok": False, "error": "bad mode"}
+        self._migrate_cols()
+        break_end = (time.time() + break_min * 60) if mode == "break" else None
+        self.db.exec("UPDATE focus_sessions SET mode=?, break_end_ts=? WHERE session_id=?",
+                     (mode, break_end, s["session_id"]))
+        self.db.append_event("focus", "system" if mode == "break" else "user",
+                             {"action": "mode", "mode": mode,
+                              "break_min": break_min if mode == "break" else 0,
+                              "session_id": s["session_id"]})
+        return {"ok": True, "mode": mode, "break_end_ts": break_end}
 
     def stop(self) -> dict:
         s = self.active()
@@ -59,6 +89,9 @@ class Focus:
         s = self.active()
         if not s:
             return {"ok": True, "nudges": []}
+        # on a break you're ALLOWED to wander — no nudges, no drift counting
+        if s.get("mode") == "break":
+            return {"ok": True, "nudges": [], "on_break": True}
         allow = json.loads(s["allow_domains"])
         from urllib.parse import urlparse
         domain = urlparse(url).netloc

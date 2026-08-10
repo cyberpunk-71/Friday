@@ -126,3 +126,42 @@ def test_focus_start_accepts_task(db):
     assert s["task"] == "ship the UI"
     assert "github.com" in s["allow_domains"]
     f.stop()
+
+
+def test_focus_break_mode_skips_nudges(db):
+    """Pomodoro: during break, drifts must NOT count or nudge (wandering on a
+    break is allowed)."""
+    from core.focus import Focus
+    f = Focus(db)
+    f.start(25, allow=[], task="work", why="then I watch an episode",
+            first_step="open the editor")
+    r = f.set_mode("break", break_min=5)
+    assert r["ok"] and r["mode"] == "break"
+    assert r["break_end_ts"] and r["break_end_ts"] > time.time()
+    s = f.active()
+    assert s["mode"] == "break"
+    # drift during break → no nudges, no drift_count bump
+    r2 = f.log_drift("https://youtube.com/shorts/abc")
+    assert r2.get("on_break") is True
+    assert r2["nudges"] == []
+    s2 = f.active()
+    assert s2["drift_count"] == 0
+    # back to work → drifts count again
+    f.set_mode("work")
+    r3 = f.log_drift("https://youtube.com/shorts/abc")
+    assert r3["nudges"], "work mode must nudge again"
+    assert f.active()["drift_count"] == 1
+
+
+def test_focus_start_why_first_step(db):
+    """ADHD fields (why/reward + first tiny step) persist on the session."""
+    from core.focus import Focus
+    f = Focus(db)
+    r = f.start(15, allow=[], task="write report", why="then chai + episode",
+                first_step="open the doc and write the title")
+    assert r["ok"]
+    s = f.active()
+    assert s["why"] == "then chai + episode"
+    assert s["first_step"] == "open the doc and write the title"
+    assert s["mode"] == "work"
+    f.stop()

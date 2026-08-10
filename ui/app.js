@@ -618,38 +618,144 @@ $("#sql-go").addEventListener("click", async () => {
   } catch (e) { $("#sql-out").innerHTML = `<div class="card" style="color:var(--bad)">${esc(e.message)}</div>`; }
 });
 
-/* ============================== focus panel — BODY DOUBLE ============================== */
-/* Friday works ALONGSIDE you: presence, timer, milestone check-ins, drift
-   reactions, and an end-of-session summary. Body doubling, productized. */
+/* ============================== focus panel — BODY DOUBLE · ADHD-FRIENDLY ============================== */
+/* Friday works ALONGSIDE you: presence, timer, pomodoro work/break cycles,
+   micro-commitments, milestone check-ins, drift forgiveness, rewards, ambient
+   sound, chimes. Built for ADHD brains: tiny starts, one task, come-back
+   without shame. */
 state.focus.companionLog = [];     // companion lines for the current session
 state.focus.lastMilestone = 0;
 state.focus.lastSessionId = null;  // the session we just ended (for summary)
 state.focus.stats = null;
+state.focus.onBreak = false;       // pomodoro break in progress
+state.focus.breakEnd = 0;
+state.focus.round = 1;             // pomodoro round number
+state.focus.comebacks = 0;         // times you came back after a drift (celebrated!)
+
+/* warm, human lines — rotated so Friday never repeats itself */
+const BD_LINES = {
+  start: [
+    "I'm here with you. Same room, same timer. Let's work.",
+    "We're in this together — starting now. No pressure, just begin.",
+    "Okay, together: one small step, then the next. I'm right here.",
+  ],
+  checkin: [
+    "Still here with you. Keep going — you're doing great.",
+    "Nice and steady. The work is happening.",
+    "I can see the progress. Keep the momentum.",
+    "You're in it. That's the hard part — done.",
+  ],
+  milestone: {
+    1: "Quarter in — nice. You've started, that's the win.",
+    2: "Halfway! You're doing the thing. Reward's getting closer.",
+    3: "Almost done — one last push. I'm right here.",
+  },
+  back: [
+    "Welcome back 🧡 Resetting the clock — you've got this.",
+    "Back on track! That comeback just counted. We move.",
+    "There you are. No guilt, just momentum again.",
+  ],
+  drift: [
+    "You drifted to {d} — no judgment, come back when you're ready.",
+    "Hey, noticed {d}. It happens. Take a breath, come back.",
+    "Wandering is normal. Let's settle back in — I'm here.",
+  ],
+  break: [
+    "Break time ☕ Stand up, shake out your hands, look at something far away. You earned it.",
+    "Pause — water, stretch, blink. Your brain needs the reset.",
+    "Break! Walk a lap around the room. I'll keep your spot warm.",
+  ],
+  breakOver: [
+    "Break's over — ready for round {n}? No pressure. Just start.",
+    "Back to it whenever you're ready, round {n}. I'm here.",
+    "Round {n} time. Tiny step first. Let's go.",
+  ],
+  end: [
+    "That's a wrap 🎉 {m} min focused{t}, {d} drift{s}. You showed up. That's what counts.",
+    "Done — {m} minutes{t}. Look at you. Rest, then reward.",
+  ],
+};
 
 function bdSay(msg, kind = "") {
   state.focus.companionLog.push({ msg, kind, ts: Date.now() });
+  renderCompanionLog();
 }
+function bdRand(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 
-/* companion reaction when a drift is detected — gentle, no judgment */
-function bdOnDrift(domain) {
-  if (!state.focus.active) return;
-  const d = String(domain || "").replace(/^www\./, "").slice(0, 40);
-  bdSay(`You drifted to ${d || "another tab"} — no judgment, come back when you're ready.`, "drift");
-  if (state.view === "focus") {
-    // refresh stats + studio so the drift feed updates
-    api("/api/focus/stats").then(st => { state.focus.stats = st; renderFocusStudio(state.focus.active, st); }).catch(() => {});
+/* ---------------- sound: chimes + ambient brown noise ---------------- */
+let ambient = { on: false, ctx: null };
+function chime(kind) {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const notes = {
+      start:   [[660, 0, .09]],
+      warn:    [[880, 0, .08], [880, .13, .08]],
+      workEnd: [[880, 0, .1], [880, .16, .1], [880, .32, .18]],
+      breakEnd:[[660, 0, .1], [880, .16, .18]],
+    }[kind] || [[660, 0, .1]];
+    notes.forEach(([f, at, dur]) => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = "sine"; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, ctx.currentTime + at);
+      g.gain.exponentialRampToValueAtTime(0.12, ctx.currentTime + at + .02);
+      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + at + dur);
+      o.connect(g); g.connect(ctx.destination);
+      o.start(ctx.currentTime + at); o.stop(ctx.currentTime + at + dur + .05);
+    });
+    setTimeout(() => ctx.close(), 1200);
+  } catch (e) {}
+}
+function toggleAmbient(on) {
+  const want = on !== undefined ? on : !ambient.on;
+  if (want) {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const len = ctx.sampleRate * 2;
+      const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+      const d = buf.getChannelData(0);
+      let last = 0;
+      for (let i = 0; i < len; i++) {
+        const w = Math.random() * 2 - 1;
+        last = (last + 0.02 * w) / 1.02;
+        d[i] = last * 3.5;
+      }
+      const src = ctx.createBufferSource(); src.buffer = buf; src.loop = true;
+      const f = ctx.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = 900;
+      const g = ctx.createGain(); g.gain.value = 0.22;
+      src.connect(f); f.connect(g); g.connect(ctx.destination);
+      src.start();
+      ambient = { on: true, ctx };
+      localStorage.setItem("friday.ambient", "1");
+    } catch (e) {}
+  } else if (ambient.ctx) {
+    try { ambient.ctx.close(); } catch (e) {}
+    ambient = { on: false, ctx: null };
+    localStorage.setItem("friday.ambient", "0");
   }
 }
 
+/* ---------------- session lifecycle ---------------- */
 async function startFocus(o = {}) {
   const minutes = o.minutes || +($("#bd-minutes").value) || 25;
   const task = (o.task !== undefined ? o.task : $("#bd-task").value || "").trim();
+  const why = (o.why !== undefined ? o.why : $("#bd-why").value || "").trim();
+  const first = (o.first !== undefined ? o.first : $("#bd-first").value || "").trim();
   const allow = (o.allow || ($("#bd-allow").value || "").split(",").map(s => s.trim()).filter(Boolean));
-  const voice = o.voice !== undefined ? o.voice : $("#bd-voice").checked;
-  const r = await api("/api/focus/start", { method: "POST", body: JSON.stringify({ minutes, allow, voice, task }) });
+  const gentle = o.gentle !== undefined ? o.gentle : $("#bd-gentle").checked;
+  const voice = o.voice !== undefined ? o.voice : (!$("#bd-voice").checked || gentle);
+  const pomo = { enabled: $("#bd-pomo").checked, breakMin: +($("#bd-break").value) || 5 };
+  state.focus.pomo = pomo;
+  try { localStorage.setItem("friday.pomo", JSON.stringify(pomo)); } catch (e) {}
+  const r = await api("/api/focus/start", { method: "POST", body: JSON.stringify({ minutes, allow, voice, task, why, first_step: first }) });
   if (r.ok) {
-    state.focus.companionLog = [{ msg: `I'm here with you — ${minutes} min${task ? ` on “${task}”` : ""}. Same room, same timer. Let's work.`, kind: "start", ts: Date.now() }];
+    state.focus.companionLog = [{ msg: o.justStart
+      ? "5 minutes. That's it. Future-you says thanks — I'm right here."
+      : bdRand(BD_LINES.start), kind: "start", ts: Date.now() }];
     state.focus.lastMilestone = 0;
+    state.focus.onBreak = false;
+    state.focus.round = (o.round || 1);
+    state.focus.comebacks = 0;
+    chime("start");
     toast(`🎯 Body-double session started — ${minutes} min`, "good");
   } else {
     toast("focus: " + esc(r.error), "bad");
@@ -661,27 +767,59 @@ async function startFocus(o = {}) {
 
 async function stopFocus() {
   const r = await api("/api/focus/stop", { method: "POST" });
-  if (r.ok) toast(r.status === "completed" ? "🎉 Session complete" : "Focus stopped", "chrome");
+  if (r.ok) {
+    state.focus.onBreak = false;
+    toast(r.status === "completed" ? "🎉 Session complete" : "Focus stopped", "chrome");
+  }
   loadFocus();
   return r;
 }
 
-/* milestone check-ins (deterministic, gentle) */
+/* pomodoro transitions (client-driven; server stores mode for drift logic) */
+async function bdStartBreak(breakMin) {
+  state.focus.onBreak = true;
+  state.focus.breakDone = false;
+  state.focus.breakEnd = Date.now() / 1000 + (breakMin || 5) * 60;
+  try { await api("/api/focus/mode", { method: "POST", body: JSON.stringify({ mode: "break", break_min: breakMin || 5 }) }); } catch (e) {}
+  if (state.focus.active) { state.focus.active.mode = "break"; state.focus.active.break_end_ts = state.focus.breakEnd; }
+  bdSay(bdRand(BD_LINES.break), "break");
+  chime("workEnd");
+  renderFocusStudio(state.focus.active, state.focus.stats);
+  renderFocusWidget(state.focus.active);
+}
+async function bdEndBreak(startNext) {
+  state.focus.onBreak = false;
+  try { await api("/api/focus/mode", { method: "POST", body: JSON.stringify({ mode: "work" }) }); } catch (e) {}
+  if (state.focus.active) { state.focus.active.mode = "work"; state.focus.active.break_end_ts = null; }
+  if (startNext) {
+    const s = state.focus.active;
+    const n = (state.focus.round || 1) + 1;
+    await stopFocus();
+    await startFocus({
+      minutes: state.focus.total || 25,
+      task: s && s.task, why: s && s.why, first: s && s.first_step,
+      allow: s ? JSON.parse(s.allow_domains || "[]") : [],
+      voice: true, round: n,
+    });
+    bdSay(bdRand(BD_LINES.breakOver).replace("{n}", n), "checkin");
+  } else {
+    chime("breakEnd");
+    renderFocusStudio(state.focus.active, state.focus.stats);
+  }
+}
+
+/* milestone check-ins (deterministic, gentle) + reward reminders */
 function bdCheckMilestones(s) {
-  const total = s.target_min * 60;
+  const total = (s.target_min || 25) * 60;
   const elapsed = Date.now() / 1000 - s.start_ts;
   const frac = Math.min(1, elapsed / total);
   const ms = Math.floor(frac * 4);
   if (ms > state.focus.lastMilestone) {
     state.focus.lastMilestone = ms;
-    const lines = {
-      1: "Quarter in — nice. Keep the momentum.",
-      2: "Halfway there! You're doing the thing.",
-      3: "Almost done — one last push.",
-    };
-    if (lines[ms]) {
-      bdSay(lines[ms], "checkin");
-      if ($("#bd-log").getBoundingClientRect) renderFocusStudio(state.focus.active, state.focus.stats);
+    if (BD_LINES.milestone[ms]) {
+      bdSay(BD_LINES.milestone[ms], "checkin");
+    } else if (ms === 2 && s.why) {
+      bdSay(`Halfway! Remember the why — “${s.why}” is waiting on the other side.`, "checkin");
     }
   }
 }
@@ -689,6 +827,31 @@ function bdCheckMilestones(s) {
 function bdFmt(s) {
   const m = Math.floor(s / 60), sec = Math.floor(s % 60);
   return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+}
+
+/* 7-day focus chain (don't break the chain 🔥) */
+function bdChain(stats) {
+  const days = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(Date.now() - i * 86400000);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    days.push({ key, label: ["S", "M", "T", "W", "T", "F", "S"][d.getDay()], min: 0 });
+  }
+  const dayMin = {};
+  (stats.sessions || []).forEach(s => {
+    if (s.status === "completed" || s.status === "abandoned") {
+      const d = new Date(s.start_ts * 1000);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const m = Math.max(0, Math.round(((s.end_ts || Date.now() / 1000) - s.start_ts) / 60));
+      dayMin[key] = (dayMin[key] || 0) + m;
+    }
+  });
+  const max = Math.max(1, ...days.map(d => dayMin[d.key] || 0));
+  return days.map(d => {
+    const v = dayMin[d.key] || 0;
+    const h = Math.max(3, Math.round((v / max) * 40));
+    return `<div class="chain-day" title="${v} min"><div class="chain-bar" style="height:${h}px"></div><span>${d.label}</span></div>`;
+  }).join("");
 }
 
 function renderFocusStudio(s, stats) {
@@ -704,31 +867,48 @@ function renderFocusStudio(s, stats) {
           <img src="/static/companion.png" class="bd-avatar" alt="Friday"/>
           <div class="bd-companion-name">Friday</div>
           <div class="bd-companion-status">Ready when you are — I'll work alongside you.</div>
+          <div class="bd-adhd-tips">
+            <div class="bd-tip-chip">⚡ 5 minutes counts</div>
+            <div class="bd-tip-chip">🎯 one task at a time</div>
+            <div class="bd-tip-chip">🧡 forgive, come back</div>
+          </div>
         </div>
         <div class="bd-start-card card">
           <h3>What are we working on?</h3>
-          <input id="bd-task" type="text" placeholder="e.g. build the agent UI — write 3 functions" maxlength="120"/>
+          <input id="bd-task" type="text" placeholder="One task. Just one. (e.g. build the agent UI)" maxlength="120"/>
+          <div class="bd-field-hint dim">✳️ <b>First tiny step</b> — makes starting easy</div>
+          <input id="bd-first" type="text" placeholder="e.g. open the editor and write one function" maxlength="120"/>
+          <div class="bd-field-hint dim">🎁 <b>Reward after</b> — ADHD brains work on rewards</div>
+          <input id="bd-why" type="text" placeholder="e.g. then I watch one episode" maxlength="120"/>
           <div class="bd-presets">
             ${[15, 25, 45, 60].map(m => `<button class="bd-preset ${m === 25 ? "active" : ""}" data-min="${m}">${m}m</button>`).join("")}
             <input id="bd-minutes" type="number" value="25" min="1" max="180" title="custom minutes"/>
           </div>
           <div class="bd-opts">
+            <label class="bd-check"><input id="bd-pomo" type="checkbox" checked/> pomodoro · break</label>
+            <input id="bd-break" type="number" value="5" min="2" max="20" title="break minutes" style="width:64px"/> <span class="dim">min</span>
+            <label class="bd-check"><input id="bd-gentle" type="checkbox"/> gentle</label>
+          </div>
+          <div class="bd-opts">
             <input id="bd-allow" type="text" placeholder="allow domains, comma (e.g. github.com)"/>
             <label class="bd-check"><input id="bd-voice" type="checkbox" checked/> voice nudges</label>
+            <label class="bd-check"><input id="bd-ambient" type="checkbox" ${ambient.on ? "checked" : ""}/> brown noise</label>
           </div>
           <button id="bd-go" class="btn primary big">▶ Start — I'm here with you</button>
-          <div class="bd-tip dim">Tip: body doubling works best when you state your task out loud. Tell me and we begin.</div>
+          <button id="bd-just5" class="btn ghost big">⚡ Just start — 5 minutes</button>
+          <div class="bd-tip dim">ADHD-friendly: start tiny, state the reward, and I'll keep the rhythm with chimes + check-ins.</div>
         </div>
       </div>
       <div class="bd-record">
         <h3>Your focus record</h3>
+        <div class="bd-chain">${bdChain(st)}</div>
         <div class="ov-grid">
           <div class="ov-tile"><div class="v">${st.week ? st.week.minutes : 0}<small>m</small></div><div class="l">this week · ${st.week ? st.week.count : 0} sessions</div></div>
-          <div class="ov-tile"><div class="v">${st.streak_days || 0}<small>d</small></div><div class="l">day streak</div></div>
+          <div class="ov-tile"><div class="v">${st.streak_days || 0}<small>d</small></div><div class="l">day streak 🔥</div></div>
           <div class="ov-tile"><div class="v">${st.best_day_min || 0}<small>m</small></div><div class="l">best day</div></div>
           <div class="ov-tile"><div class="v">${st.avg_min || 0}<small>m</small></div><div class="l">avg session</div></div>
           <div class="ov-tile"><div class="v">${st.total_completed || 0}</div><div class="l">completed</div></div>
-          <div class="ov-tile"><div class="v">${st.total_drifts || 0}</div><div class="l">drifts tracked</div></div>
+          <div class="ov-tile"><div class="v">${st.total_drifts || 0}</div><div class="l">drifts · ${st.nudges_total || 0} nudges</div></div>
         </div>
         <div class="dim" style="margin:10px 0 4px">peak drift hours: ${(l.peak_hours || []).map(h => `${h}:00`).join(", ") || "—"} · top distractions: ${(l.top_distraction_domains || []).map(esc).join(", ") || "—"}</div>
         ${sessions.length ? `<h4 style="margin:12px 0 6px">Recent sessions</h4>` + sessions.slice(0, 8).map(x => `
@@ -738,6 +918,7 @@ function renderFocusStudio(s, stats) {
             <span><b>${Math.round(((x.end_ts || Date.now() / 1000) - x.start_ts) / 60)}</b>/${x.target_min}m</span>
             <span class="dim">drifts ${x.drift_count}</span>
             ${x.task ? `<span class="dim">· ${esc(x.task)}</span>` : ""}
+            ${x.why ? `<span class="dim">· 🎁 ${esc(x.why)}</span>` : ""}
           </div>`).join("") : ""}
       </div>`;
     // preset chips
@@ -748,38 +929,57 @@ function renderFocusStudio(s, stats) {
     }));
     const go = $("#bd-go");
     if (go) go.addEventListener("click", () => startFocus());
+    const j5 = $("#bd-just5");
+    if (j5) j5.addEventListener("click", () => startFocus({ minutes: 5, justStart: true }));
+    const amb = $("#bd-ambient");
+    if (amb) amb.addEventListener("change", () => toggleAmbient(amb.checked));
     return;
   }
   /* ---------------- active session ---------------- */
-  const left = Math.max(0, (s.start_ts + s.target_min * 60) - Date.now() / 1000);
-  const pct = Math.max(0, Math.min(1, 1 - left / (s.target_min * 60)));
-  const el = Math.floor((Date.now() / 1000 - s.start_ts) / 60);
+  const onBreak = s.mode === "break" && state.focus.onBreak;
+  const now = Date.now() / 1000;
+  const workEnd = s.start_ts + s.target_min * 60;
+  const left = onBreak
+    ? Math.max(0, (s.break_end_ts || state.focus.breakEnd || now) - now)
+    : Math.max(0, workEnd - now);
+  const pct = Math.max(0, Math.min(1, onBreak ? 1 - left / ((s.break_end_ts || now + 300) - now) : 1 - left / (s.target_min * 60)));
+  const el = Math.floor((now - s.start_ts) / 60);
   const drifts = s.drift_count || 0;
   const doms = (stats && stats.recent_drifts || []).filter(d => d.session_id === s.session_id).map(d => d.domain);
   host.innerHTML = `
     <div class="bd-active">
       <div class="bd-main">
-        <div class="bd-companion active">
-          <img src="/static/companion.png" class="bd-avatar pulse" alt="Friday"/>
+        <div class="bd-companion active ${onBreak ? "onbreak" : ""}">
+          <img src="/static/companion.png" class="bd-avatar ${onBreak ? "" : "pulse"}" alt="Friday"/>
           <div class="bd-companion-name">Friday</div>
-          <div class="bd-companion-status">working alongside you · in flow</div>
+          <div class="bd-companion-status">${onBreak ? "on break with you ☕" : "working alongside you · in flow"}</div>
+          ${state.focus.round > 1 ? `<div class="bd-round">round ${state.focus.round}</div>` : ""}
         </div>
-        <div class="bd-timer-card card">
+        <div class="bd-timer-card card ${onBreak ? "break" : ""}">
+          <div class="bd-mode-label">${onBreak ? "☕ BREAK" : "🎯 FOCUS"}</div>
           <div class="bd-timer-ring">
             <svg viewBox="0 0 120 120">
               <defs><linearGradient id="bdGrad" x1="0" y1="0" x2="1" y2="1">
                 <stop offset="0%" stop-color="#ff7849"/><stop offset="100%" stop-color="#ff5e3a"/>
+              </linearGradient>
+              <linearGradient id="bdGradBreak" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#0ea5a4"/><stop offset="100%" stop-color="#34d399"/>
               </linearGradient></defs>
               <circle class="bd-ring-bg" cx="60" cy="60" r="52"/>
-              <circle class="bd-ring-fg" id="bd-ring-fg" cx="60" cy="60" r="52"/>
+              <circle class="bd-ring-fg" id="bd-ring-fg" cx="60" cy="60" r="52" stroke="url(#${onBreak ? "bdGradBreak" : "bdGrad"})"/>
             </svg>
             <div class="bd-timer-time" id="bd-timer-time">${bdFmt(left)}</div>
           </div>
-          <div class="bd-timer-task">${s.task ? `🎯 ${esc(s.task)}` : "deep work"}</div>
-          <div class="bd-timer-sub dim">${el}m elapsed · ${Math.round(pct * 100)}% done</div>
+          <div class="bd-timer-task">${onBreak ? "stand · water · look far away" : (s.task ? `🎯 ${esc(s.task)}` : "deep work")}</div>
+          ${!onBreak && s.first_step ? `<div class="bd-first-step dim">first step: ${esc(s.first_step)}</div>` : ""}
+          ${!onBreak && s.why ? `<div class="bd-reward dim">🎁 after: ${esc(s.why)}</div>` : ""}
+          <div class="bd-timer-sub dim">${onBreak ? "" : `${el}m elapsed · ${Math.round(pct * 100)}% done`}</div>
+          ${!onBreak && drifts > 0 ? `<button id="bd-back" class="btn ghost back">🧡 I'm back — reset the clock</button>` : ""}
           <div class="bd-actions">
-            <button id="bd-stop" class="btn danger">■ End session</button>
-            <button id="bd-plus5" class="btn ghost">+5 min</button>
+            ${onBreak
+              ? `<button id="bd-break-next" class="btn primary">▶ Start next round</button><button id="bd-break-end" class="btn ghost">I'm done</button>`
+              : `<button id="bd-stop" class="btn danger">■ End session</button><button id="bd-plus5" class="btn ghost">+5 min</button>`}
+            <button id="bd-ambient-btn" class="btn ghost ${ambient.on ? "ambient-on" : ""}" title="brown noise">${ambient.on ? "🔊 noise on" : "🔈 noise"}</button>
           </div>
         </div>
       </div>
@@ -791,6 +991,7 @@ function renderFocusStudio(s, stats) {
         <div class="card bd-stats-card">
           <h3>This session</h3>
           <div class="bd-stat"><span>drifts</span><b id="bd-drifts">${drifts}</b></div>
+          <div class="bd-stat"><span>comebacks</span><b>${state.focus.comebacks}</b></div>
           <div class="bd-stat"><span>elapsed</span><b>${el}m</b></div>
           <div class="bd-stat"><span>target</span><b>${s.target_min}m</b></div>
           ${doms.length ? `<div class="bd-doms dim">drifted to: ${doms.slice(0, 4).map(esc).join(", ")}</div>` : `<div class="bd-doms dim">no drifts yet — locked in 🔒</div>`}
@@ -803,12 +1004,24 @@ function renderFocusStudio(s, stats) {
   if (stop) stop.addEventListener("click", () => stopFocus());
   const plus = $("#bd-plus5");
   if (plus) plus.addEventListener("click", async () => {
-    // extend: stop old + start new with remaining + 5 (keeps stats honest)
     await api("/api/focus/stop", { method: "POST" });
     const mins = Math.max(1, Math.round(left / 60) + 5);
-    await startFocus({ minutes: mins, task: s.task, allow: JSON.parse(s.allow_domains || "[]"), voice: true });
+    await startFocus({ minutes: mins, task: s.task, why: s.why, first: s.first_step, allow: JSON.parse(s.allow_domains || "[]"), voice: true, round: state.focus.round });
     bdSay("I added 5 minutes — we're in this together.");
   });
+  const back = $("#bd-back");
+  if (back) back.addEventListener("click", () => {
+    state.focus.comebacks += 1;
+    bdSay(bdRand(BD_LINES.back), "checkin");
+    chime("start");
+    renderFocusStudio(state.focus.active, state.focus.stats);
+  });
+  const bnext = $("#bd-break-next");
+  if (bnext) bnext.addEventListener("click", () => bdEndBreak(true));
+  const bend = $("#bd-break-end");
+  if (bend) bend.addEventListener("click", () => bdEndBreak(false));
+  const amb = $("#bd-ambient-btn");
+  if (amb) amb.addEventListener("click", () => { toggleAmbient(); renderFocusStudio(state.focus.active, state.focus.stats); });
   renderCompanionLog();
 }
 
@@ -829,13 +1042,27 @@ function renderFocusWidget(s) {
   if (!idle || !act) return;
   if (s) {
     idle.classList.add("hidden"); act.classList.remove("hidden");
-    const left = Math.max(0, (s.start_ts + s.target_min * 60) - Date.now() / 1000);
-    const t = $("#bd-mini-time"); if (t) t.textContent = bdFmt(left);
-    const task = $("#bd-mini-task"); if (task) task.textContent = s.task ? s.task : "deep work";
-    const d = $("#focus-drifts"); if (d) d.textContent = `drifts: ${s.drift_count || 0}`;
+    const onBreak = s.mode === "break" && state.focus.onBreak;
+    const left = onBreak
+      ? Math.max(0, (s.break_end_ts || 0) - Date.now() / 1000)
+      : Math.max(0, (s.start_ts + s.target_min * 60) - Date.now() / 1000);
+    const t = $("#bd-mini-time"); if (t) t.textContent = (onBreak ? "☕ " : "") + bdFmt(left);
+    const task = $("#bd-mini-task"); if (task) task.textContent = onBreak ? "on break" : (s.task ? s.task : "deep work");
+    const d = $("#focus-drifts"); if (d) d.textContent = `drifts: ${s.drift_count || 0}${state.focus.round > 1 ? ` · R${state.focus.round}` : ""}`;
     const w = $("#focus-widget"); if (w) w.classList.remove("hidden");
   } else {
     idle.classList.remove("hidden"); act.classList.add("hidden");
+  }
+}
+
+/* companion reaction when a drift is detected — gentle, no judgment */
+function bdOnDrift(domain) {
+  if (!state.focus.active) return;
+  if (state.focus.onBreak) return;         // break = wandering allowed
+  const d = String(domain || "").replace(/^www\./, "").slice(0, 40);
+  bdSay(bdRand(BD_LINES.drift).replace("{d}", d || "another tab"), "drift");
+  if (state.view === "focus") {
+    api("/api/focus/stats").then(st => { state.focus.stats = st; renderFocusStudio(state.focus.active, st); }).catch(() => {});
   }
 }
 
@@ -843,6 +1070,13 @@ async function loadFocus() {
   const [active, stats] = await Promise.all([api("/api/focus/active"), api("/api/focus/stats")]);
   const s = active.session;
   state.focus.stats = stats;
+  // resume break state after refresh: server persisted mode + break_end_ts
+  if (s && s.mode === "break") {
+    state.focus.onBreak = true;
+    state.focus.breakEnd = s.break_end_ts || (Date.now() / 1000 + 300);
+  } else if (s) {
+    state.focus.onBreak = false;
+  }
   // detect session end (worker completes / user stopped elsewhere)
   if (state.focus.active && !s) {
     const ended = state.focus.active;
@@ -850,9 +1084,12 @@ async function loadFocus() {
     const mins = Math.max(0, Math.round((Date.now() / 1000 - ended.start_ts) / 60));
     const dr = ended.drift_count || 0;
     const wrap = mins >= (ended.target_min || 25) * 0.8;
-    bdSay(wrap
-      ? `That's a wrap 🎉 — ${mins} min focused${ended.task ? ` on “${ended.task}”` : ""}, ${dr} drift${dr === 1 ? "" : "s"}. You showed up. Want a 5-min break?`
-      : `Session ended after ${mins} min${ended.task ? ` on “${ended.task}”` : ""}. Good work — we'll get it next time.`, "end");
+    state.focus.onBreak = false;
+    bdSay(bdRand(BD_LINES.end)
+      .replace("{m}", mins)
+      .replace("{t}", ended.task ? ` on “${ended.task}”` : "")
+      .replace("{d}", dr)
+      .replace("{s}", dr === 1 ? "" : "s"), "end");
     if (state.view === "focus") {
       toast(wrap ? "🎉 Session complete — nice work" : "Focus session ended", wrap ? "good" : "chrome");
     }
@@ -862,12 +1099,15 @@ async function loadFocus() {
   state.focus.ends = s ? s.start_ts + s.target_min * 60 : 0;
   if (s && s.session_id !== state.focus.lastSessionId) {
     // fresh session (just started here or in chat) → seed the companion log
+    state.focus.lastSessionId = s.session_id;
+    state.focus.lastMilestone = 0;
+    state.focus.onBreak = false;
+    state.focus.comebacks = 0;
     if (!state.focus.companionLog.length || state.focus.companionLog[0].kind !== "start") {
-      state.focus.companionLog = [{ msg: `I'm here with you — ${s.target_min} min${s.task ? ` on “${s.task}”` : ""}. Same room, same timer. Let's work.`, kind: "start", ts: Date.now() }];
-      state.focus.lastMilestone = 0;
+      state.focus.companionLog = [{ msg: `I'm here with you — ${s.target_min} min${s.task ? ` on “${s.task}”` : ""}${s.why ? `, then: ${s.why}` : ""}. Same room, same timer. Let's work.`, kind: "start", ts: Date.now() }];
     }
   }
-  if (s) bdCheckMilestones(s);
+  if (s && !state.focus.onBreak) bdCheckMilestones(s);
   renderFocusStudio(s, stats);
   renderFocusWidget(s);
 }
@@ -1134,6 +1374,7 @@ let lastDriftReport = 0;
 
 function reportDrift() {
   if (!state.focus.active) return;
+  if (state.focus.onBreak) return;   // breaks are drift-free by design
   const now = Date.now();
   if (now - lastDriftReport < 3000) return;          // client throttle
   lastDriftReport = now;
@@ -1220,25 +1461,53 @@ async function pollOverview() {
 }
 function pollFocus() {
   const s = state.focus.active;
-  if (s) {
-    const left = Math.max(0, state.focus.ends - Date.now() / 1000);
-    const pct = Math.max(0, Math.min(1, 1 - left / (state.focus.total * 60)));
-    const ring = $("#focus-ring-fg");
-    if (ring) ring.style.strokeDashoffset = (163.4 * (1 - pct)).toFixed(1);
-    const t = $("#focus-time"); if (t) t.textContent = bdFmt(left);
-    const d = $("#focus-drifts"); if (d) d.textContent = `drifts: ${s.drift_count}${s.task ? ` · ${s.task}` : ""}`;
-    const mt = $("#bd-mini-time"); if (mt) mt.textContent = bdFmt(left);
-    const big = $("#bd-timer-time");
-    if (big) {
-      big.textContent = bdFmt(left);
-      const ring2 = $("#bd-ring-fg");
-      if (ring2) ring2.style.strokeDashoffset = (326.7 * (1 - pct)).toFixed(1);
-    }
-    // milestone check-ins while active
-    bdCheckMilestones(s);
-  } else {
+  if (!s) {
     const hm = $("#header-focus-mini");
     if (hm) hm.classList.add("hidden");
+    return;
+  }
+  const now = Date.now() / 1000;
+  const onBreak = state.focus.onBreak && s.mode === "break";
+  const workEnd = s.start_ts + s.target_min * 60;
+  let left, pct;
+  if (onBreak) {
+    left = Math.max(0, (s.break_end_ts || state.focus.breakEnd || now) - now);
+    const denom = Math.max(1, (s.break_end_ts || state.focus.breakEnd || now + 300) - now + left);
+    pct = Math.max(0, Math.min(1, 1 - left / denom));
+    if (left <= 0 && !state.focus.breakDone) {
+      state.focus.breakDone = true;
+      chime("breakEnd");
+      bdSay(bdRand(BD_LINES.breakOver).replace("{n}", (state.focus.round || 1) + 1), "checkin");
+      renderFocusStudio(s, state.focus.stats);
+      renderFocusWidget(s);
+    }
+  } else {
+    left = Math.max(0, workEnd - now);
+    pct = Math.max(0, Math.min(1, 1 - left / (s.target_min * 60)));
+    if (left <= 0) {
+      const pomo = state.focus.pomo && state.focus.pomo.enabled;
+      if (pomo) {
+        state.focus.breakDone = false;
+        bdStartBreak((state.focus.pomo && state.focus.pomo.breakMin) || 5);
+      } else {
+        stopFocus();
+      }
+      return;
+    }
+    bdCheckMilestones(s);
+  }
+  const ring = $("#focus-ring-fg");
+  if (ring) ring.style.strokeDashoffset = (163.4 * (1 - pct)).toFixed(1);
+  const t = $("#focus-time"); if (t) t.textContent = bdFmt(left);
+  const d = $("#focus-drifts"); if (d) d.textContent = `${onBreak ? "☕ " : ""}drifts: ${s.drift_count}${state.focus.round > 1 ? ` · R${state.focus.round}` : ""}${s.task ? ` · ${s.task}` : ""}`;
+  const mt = $("#bd-mini-time"); if (mt) mt.textContent = (onBreak ? "☕ " : "") + bdFmt(left);
+  const hm = $("#header-focus-mini");
+  if (hm) { hm.textContent = (onBreak ? "☕ " : "") + bdFmt(left); hm.classList.remove("hidden"); }
+  const big = $("#bd-timer-time");
+  if (big) {
+    big.textContent = bdFmt(left);
+    const ring2 = $("#bd-ring-fg");
+    if (ring2) ring2.style.strokeDashoffset = (326.7 * (1 - pct)).toFixed(1);
   }
 }
 /* nudge SSE stream → toasts */
@@ -1281,6 +1550,9 @@ $("#theme-toggle").addEventListener("click", async () => {
 /* ============================== boot ============================== */
 (async function boot() {
   setInterval(pollOverview, 10000);
+  try { const p = JSON.parse(localStorage.getItem("friday.pomo") || ""); if (p && p.enabled !== undefined) state.focus.pomo = p; } catch (e) {}
+  state.focus.pomo = state.focus.pomo || { enabled: true, breakMin: 5 };
+  if (localStorage.getItem("friday.ambient") === "1") toggleAmbient(true);
   // offline-sandbox banner: show when the server has no LLM key configured
   try {
     const ov = await api("/api/admin/overview");
@@ -1302,7 +1574,7 @@ $("#theme-toggle").addEventListener("click", async () => {
       const a = await api("/api/focus/active");
       const was = state.focus.active;
       const now = a.session;
-      const changed = (was && !now) || (!was && now) || (was && now && (was.session_id !== now.session_id || was.drift_count !== now.drift_count));
+      const changed = (was && !now) || (!was && now) || (was && now && (was.session_id !== now.session_id || was.drift_count !== now.drift_count || was.mode !== now.mode));
       state.focus.active = now;
       state.focus.total = now ? now.target_min : 25;
       state.focus.ends = now ? now.start_ts + now.target_min * 60 : 0;

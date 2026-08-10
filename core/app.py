@@ -560,12 +560,21 @@ async def focus_start(payload: dict):
     return Focus(get_db()).start(payload.get("minutes", 25),
                                  payload.get("allow", []),
                                  payload.get("voice", True),
-                                 payload.get("task") or None)
+                                 payload.get("task") or None,
+                                 payload.get("why") or None,
+                                 payload.get("first_step") or None)
 
 
 @app.post("/api/focus/stop")
 async def focus_stop():
     return Focus(get_db()).stop()
+
+
+@app.post("/api/focus/mode")
+async def focus_mode(payload: dict):
+    """work ↔ break toggle (pomodoro). During break, drifts are not nudged."""
+    return Focus(get_db()).set_mode(payload.get("mode", "work"),
+                                    int(payload.get("break_min", 5)))
 
 
 @app.get("/api/focus/active")
