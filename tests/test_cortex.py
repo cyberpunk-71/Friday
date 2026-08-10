@@ -620,3 +620,16 @@ def test_truncated_ctrl_never_leaks_into_turn(cortex, db, monkeypatch):
     # history is clean too (stored reply feeds the next turn)
     row = db.q1("SELECT reply FROM turns ORDER BY turn_id DESC LIMIT 1")
     assert '"ctrl"' not in (row["reply"] or "")
+
+
+def test_strip_leading_key_remnant():
+    """The model echoed just the truncated key remnant without the JSON
+    prefix ('config_deltHey! Still here...') — strip it, but never touch
+    normal prose (lowercase continuations like 'asking' are safe)."""
+    from core.cortex import strip_leading_key_remnant, polish_reply
+    assert strip_leading_key_remnant('config_deltHey! Still here') == 'Hey! Still here'
+    assert strip_leading_key_remnant('"config_deltHey! Still here') == 'Hey! Still here'
+    assert strip_leading_key_remnant('asking questions is fine') == 'asking questions is fine'
+    assert strip_leading_key_remnant('Hey normal reply') == 'Hey normal reply'
+    out = polish_reply('config_deltHey! Still here, still in focus mode with you.')
+    assert 'config_delt' not in out and out.startswith('Hey! Still here')

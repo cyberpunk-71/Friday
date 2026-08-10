@@ -136,6 +136,24 @@ def strip_truncated_ctrl(text: str) -> str:
     return t.lstrip("\n").lstrip()
 
 
+KEY_REMNANT_RE = re.compile(
+    r'^(?:"?)(' + CTRL_KNOWN_KEYS + r'[a-z_]*)(?=[A-Z])')
+
+
+def strip_leading_key_remnant(text: str) -> str:
+    """The model sometimes echoes just the truncated key remnant WITHOUT the
+    JSON prefix ('config_deltHey! Still here...' — seen live after history
+    pollution). Strip a leading known-key fragment that is followed by an
+    uppercase prose word. 'asking...' (all lowercase) is never touched."""
+    if not text:
+        return text
+    t = text.lstrip()
+    m = KEY_REMNANT_RE.match(t)
+    if m:
+        return t[m.end():]
+    return t
+
+
 def _truncated_ctrl_with_prose(buffer: str) -> bool:
     """True when the buffer holds a ctrl-JSON prefix that will NEVER parse
     (truncated, no closing brace) followed by real prose — so we can cut it
@@ -277,6 +295,8 @@ def polish_reply(reply: str) -> str:
     # truncated leading ctrl JSON (no closing braces) — the model jumps to
     # prose mid-JSON; strip it so it never renders
     t = strip_truncated_ctrl(t)
+    # standalone key remnant echoed without the JSON prefix
+    t = strip_leading_key_remnant(t)
     # leading self-name header ("**FRIDAY**" / "FRIDAY:\n") — never show it
     t = LEADING_NAME_RE.sub("", t, count=1)
     # mid-reply ctrl blocks (model compliance slip mid-stream)
@@ -302,6 +322,7 @@ def polish_history(reply: str) -> str:
     if not reply:
         return reply
     t = strip_truncated_ctrl(reply)
+    t = strip_leading_key_remnant(t)
     t = BANNED_HEADER_LEAD_RE.sub("", t)
     t = BANNED_HEADER_RE.sub("", t)
     t = PIPELINE_NARRATION_RE.sub("", t)

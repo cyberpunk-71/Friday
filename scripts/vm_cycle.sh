@@ -274,6 +274,33 @@ PY
   ok friday_llmfix
 }
 
+op_friday_cleanhist() {
+  log friday_cleanhist
+  # scrub ctrl-JSON leaks / truncated-key remnants out of stored chat turns
+  # so the model stops ECHOING polluted history (seen live: every reply
+  # started with 'config_deltHey! Still here...').
+  OUT="${OUT}$( cd "$RUNTIME" && .venv/bin/python - <<'PY'
+import os, sys
+sys.path.insert(0, os.getcwd())
+from core.db import get_db
+from core.cortex import polish_reply
+db = get_db()
+rows = db.q("SELECT turn_id, reply FROM turns ORDER BY turn_id DESC LIMIT 400")
+fixed = 0
+for r in rows:
+    rep = r["reply"] or ""
+    if '"ctrl"' in rep or 'config_delt' in rep or 'memory_writes' in rep \
+       or rep.startswith('"') or '{"ctrl"' in rep:
+        cleaned = polish_reply(rep)
+        if cleaned != rep:
+            db.exec("UPDATE turns SET reply=? WHERE turn_id=?", (cleaned, r["turn_id"]))
+            fixed += 1
+print(f"turns scanned: {len(rows)}, cleaned: {fixed}")
+PY
+)\n"
+  ok friday_cleanhist
+}
+
 op_friday_test() {
   log friday_test
   if [ ! -x "$RUNTIME/.venv/bin/python" ]; then
@@ -593,6 +620,7 @@ case "$CMD" in
   friday_health)      run_ops friday_health ;;
   friday_uidiff)      run_ops friday_uidiff ;;
   friday_llmfix)      run_ops friday_llmfix ;;
+  friday_cleanhist)   run_ops friday_cleanhist ;;
   friday_test)        run_ops friday_test ;;
   friday_nginx)       run_ops friday_nginx ;;
   friday_diagnose)    run_ops friday_diagnose ;;
