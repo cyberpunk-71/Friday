@@ -337,3 +337,16 @@ def test_explicit_apply_resets_auto_heal(client, db):
     assert r2.status_code == 200
     assert db.get_setting("llm.auto_heal") is None
     assert db.get_setting("llm.auto_heal_ts.gemini") is None
+
+
+def test_focus_plan_api(client, db):
+    """Today's plan persists per date via settings."""
+    r = client.get("/api/focus/plan").json()
+    assert r["items"] == []
+    r2 = client.post("/api/focus/plan", json={"items": [
+        {"text": "write the agent UI", "done": False},
+        {"text": "walk", "done": True}]})
+    assert r2.status_code == 200 and len(r2.json()["items"]) == 2
+    r3 = client.get("/api/focus/plan").json()
+    assert r3["items"][0]["text"] == "write the agent UI"
+    assert r3["items"][1]["done"] is True
