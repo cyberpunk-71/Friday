@@ -680,6 +680,66 @@ OUT="${OUT}$( sudo journalctl -u "$SVC" -n 20 --no-pager 2>/dev/null | tail -20 
   fi
 }
 
+op_friday_gemstream() {
+  log friday_gemstream
+  OUT="${OUT}$( cd "$RUNTIME" && .venv/bin/python -u - <<'PY'
+import asyncio, os, sys, json, httpx
+sys.path.insert(0, os.getcwd())
+from core.db import get_db
+from core.providers import GEMINI_MODELS
+db = get_db()
+row = db.q1("SELECT api_key FROM provider_keys WHERE provider='gemini' AND scope='default' AND active=1 ORDER BY updated_ts DESC LIMIT 1")
+key = row["api_key"]
+BASE = "https://generativelanguage.googleapis.com/v1beta"
+models = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3-flash-preview", "gemini-3.1-flash-lite", "gemini-3.5-flash-lite"]
+async def test(client, label, url, headers, body):
+    try:
+        async with client.stream("POST", url, json=body, headers=headers) as r:
+            if r.status_code != 200:
+                body_txt = (await r.aread()).decode()[:160]
+                print(f"{label}: HTTP {r.status_code} {body_txt}")
+                return False
+            chunks = 0
+            text = ""
+            async for line in r.aiter_lines():
+                if not line.strip():
+                    continue
+                chunks += 1
+                s = line[5:].strip() if line.startswith("data:") else line.strip()
+                if not s or s == "[DONE]":
+                    continue
+                try:
+                    obj = json.loads(s)
+                    for cand in obj.get("candidates", []) or []:
+                        for part in (cand.get("content", {}).get("parts", []) or []):
+                            text += part.get("text", "")
+                except Exception:
+                    pass
+                if chunks > 4000:
+                    break
+            print(f"{label}: OK chunks={chunks} text={text[:40]!r}")
+            return True
+    except Exception as e:
+        print(f"{label}: EXC {type(e).__name__}: {str(e)[:140]}")
+        return False
+
+async def go():
+    async with httpx.AsyncClient(timeout=90) as client:
+        for m in models:
+            url = f"{BASE}/models/{m}:streamGenerateContent"
+            body = {"contents": [{"role": "user", "parts": [{"text": "say hi in 3 words"}]}],
+                    "generationConfig": {"temperature": 0.6, "maxOutputTokens": 100,
+                                         "thinkingConfig": {"thinkingLevel": "minimal"}}}
+            print(f"--- model={m} ---")
+            await test(client, "  alt=sse key", url + "?alt=sse", {"x-goog-api-key": key}, body)
+            await test(client, "  ndjson key", url, {"x-goog-api-key": key}, body)
+asyncio.get_event_loop().run_until_complete(go())
+PY
+)
+"
+  ok friday_gemstream
+}
+
 case "$CMD" in
   friday_setup)       run_ops friday_setkey friday_netcheck friday_deploy friday_test friday_nginx ;;
   friday_setkey)      run_ops friday_setkey ;;
@@ -689,6 +749,7 @@ case "$CMD" in
   friday_llmfix)      run_ops friday_llmfix ;;
   friday_gemtest)     run_ops friday_gemtest ;;
   friday_gemon)       run_ops friday_gemon ;;
+  friday_gemstream)   run_ops friday_gemstream ;;
   friday_cleanhist)   run_ops friday_cleanhist ;;
   friday_test)        run_ops friday_test ;;
   friday_nginx)       run_ops friday_nginx ;;
