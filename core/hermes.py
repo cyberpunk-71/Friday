@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """HERMES — demoted to a deterministic pre-fire + governor layer (FRIDAY-Δ).
 
 It no longer picks skills. It:
@@ -7,7 +9,6 @@ It no longer picks skills. It:
 · runs the BLAST-RADIUS classifier on actions (ledger escalation rules)
 · kills runaway loops (max repair calls, max DAG steps)
 """
-from __future__ import annotations
 
 import asyncio
 import re
@@ -97,22 +98,24 @@ class Hermes:
         # kills the feature
         if EVENT_HINTS.search(low):
             is_movie = bool(re.search(r"\b(movies?|film|cinema|showtimes?|pvr|inox|cinepolis|multiplex)\b", low))
-            for url in self._listing_urls(city, is_movie):
-                if pf.web:
-                    break
-                try:
-                    from .providers import web_read
-                    pf.web = await web_read(url, 6000)
-                except Exception:
-                    pass
-            if not pf.web:
-                # last resort: search for listings/news as text grounding
-                try:
-                    q3 = f"{city} {'movies today' if is_movie else 'events today'} showtimes"
-                    pf.search = await self.search.search(q3, 5)
-                    pf.burned_usd = 0.0001
-                except Exception:
-                    pass
+            # only do the (slow) page reads when the search results are thin —
+            # news headlines already give the model enough to answer fast
+            if len(pf.search) < 3:
+                for url in self._listing_urls(city, is_movie):
+                    if pf.web:
+                        break
+                    try:
+                        from .providers import web_read
+                        pf.web = await asyncio.wait_for(web_read(url, 3000), timeout=8)
+                    except Exception:
+                        pass
+                if not pf.web:
+                    try:
+                        q3 = f"{city} {'movies today' if is_movie else 'events today'} showtimes"
+                        pf.search = await self.search.search(q3, 5)
+                        pf.burned_usd = 0.0001
+                    except Exception:
+                        pass
         # who-is / current-office-holder questions → Wikipedia via jina
         # (jina is confirmed reachable from the VM), so "mayor of ahmedabad"
         # gets a REAL answer instead of "search came back empty"
