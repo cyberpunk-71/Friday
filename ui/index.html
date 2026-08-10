@@ -4,7 +4,7 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Friday–Δ</title>
-<link rel="stylesheet" href="/static/style.css?v=3.4.10"/>
+<link rel="stylesheet" href="/static/style.css?v=3.4.11"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%23ff7849'/><stop offset='1' stop-color='%23ff5e3a'/></linearGradient></defs><rect x='8' y='8' width='84' height='84' rx='22' fill='url(%23g)'/><text x='50' y='68' font-size='52' text-anchor='middle' fill='white' font-family='Georgia,serif'>Δ</text></svg>"/>
 </head>
 <body>
@@ -70,7 +70,7 @@
         <div id="sys-status" class="dim">loading…</div>
         <div class="sys-row">
           <button id="theme-toggle" class="mini-btn" title="Toggle light/dark">◐ Theme</button>
-          <div id="ui-version" class="dim">UI v3.4.10 · core 0.1.0</div>
+          <div id="ui-version" class="dim">UI v3.4.11 · core 0.1.0</div>
         </div>
       </div>
     </div>
@@ -263,13 +263,15 @@
               </div>
             </div>
             <datalist id="gemini-models">
-              <option value="gemini-3.6-flash"></option>
-              <option value="gemini-3.5-flash"></option>
-              <option value="gemini-3.5-flash-lite"></option>
-              <option value="gemini-3.1-flash-lite"></option>
-              <option value="deepseek-chat"></option>
-              <option value="deepseek-reasoner"></option>
+              <option value="gemini-3.5-flash">Gemini 3.5 Flash — FREE tier (tight limits: ~5 req/min, ~20/day)</option>
+              <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash-Lite — FREE tier (best free option: ~500/day)</option>
+              <option value="gemini-3-flash-preview">Gemini 3 Flash (preview) — FREE tier</option>
+              <option value="gemini-3.6-flash">Gemini 3.6 Flash — paid, current best</option>
+              <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash-Lite — paid, cheapest 3.5</option>
+              <option value="deepseek-chat">DeepSeek chat</option>
+              <option value="deepseek-reasoner">DeepSeek reasoner</option>
             </datalist>
+            <div class="dim" style="margin-top:8px">🆓 Free-tier Gemini: <b>gemini-3.1-flash-lite</b> (~500 req/day), <b>gemini-3.5-flash</b> (~20/day), <b>gemini-3-flash-preview</b>. Free-tier prompts may be used by Google to improve models — don't send anything private on those.</div>
             <div id="llm-heal-note"></div>
           </div>
           <div id="provider-keys" class="cards"></div>
@@ -318,6 +320,6 @@
 <div id="toast-stack"></div>
 <div id="chrome-modal" class="hidden"><div id="chrome-modal-box"></div></div>
 
-<script src="/static/app.js?v=3.4.10"></script>
+<script src="/static/app.js?v=3.4.11"></script>
 </body>
 </html>

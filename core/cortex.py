@@ -764,11 +764,13 @@ class Cortex:
         while True:
             try:
                 chunk = await stream.__anext__()
-                # first successful chunk from the FIRST provider clears any
-                # stale error record (so admin shows the truth) — but never
-                # after a failover: that error is the reason the chat is slow
+                # first successful chunk from ANY provider clears any stale
+                # error record (so admin shows the truth) — but never after a
+                # failover: that error is the reason the chat is slow. (Was
+                # deepseek-only, which left stale 'gemini ReadError' in the
+                # admin panel long after Gemini started working.)
                 if (not self._turn_llm_error and not prose_started
-                        and ctrl is None and self.llm.name == "deepseek"):
+                        and ctrl is None):
                     self.db.set_setting("llm.last_error", None)
                     self.db.set_setting("llm.last_error_ts", None)
             except StopAsyncIteration:
