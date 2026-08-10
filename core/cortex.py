@@ -268,6 +268,27 @@ class Cortex:
     # ------------------------------------------------------------------ #
     # DEEP RESEARCH — the tool-use loop (real function calling)
     # ------------------------------------------------------------------ #
+    def _failover_provider(self, failed_name: str):
+        """If the live LLM died mid-turn (bad key, outage), swap to the OTHER
+        provider when a saved key exists for it — keeps chat smart instead of
+        dropping to the offline stub. Never fails over to the same provider."""
+        try:
+            from .db import get_db
+            db = get_db()
+            other = "gemini" if failed_name == "deepseek" else "deepseek"
+            row = db.q1(
+                "SELECT api_key FROM provider_keys WHERE provider=? AND scope='default' "
+                "AND active=1 ORDER BY updated_ts DESC LIMIT 1", (other,))
+            if not (row and row["api_key"]):
+                return None
+            if other == "gemini":
+                from .providers import GeminiProvider
+                return GeminiProvider(api_key=row["api_key"])
+            from .providers import DeepSeekProvider
+            return DeepSeekProvider(api_key=row["api_key"])
+        except Exception:
+            return None
+
     async def _deep_research(self, text: str, sense: dict, city: str) -> dict:
         """Multi-round loop: model proposes web_search/web_read/memory_recall
         → we execute → feed results back → repeat (max 3 rounds) → the final
@@ -546,14 +567,23 @@ class Cortex:
                 break
             except RuntimeError as e:
                 # network unavailable / bad key / provider error — record the
-                # REAL reason (visible in admin overview + this turn) and
-                # degrade to the deterministic provider mid-turn
+                # REAL reason (visible in admin overview + this turn), then
+                # FAIL OVER to the other provider if a key exists for it
+                # (gemini↔deepseek), else degrade to the deterministic sim
                 err = str(e)[:300]
                 self.db.set_setting("llm.last_error", err)
                 self.db.set_setting("llm.last_error_ts", time.time())
                 hint = ""
                 if "401" in err and "gemini" in err:
-                    hint = " Gemini key rejected — it may be expired or unrestricted (Google blocked those on 19 Jun 2026); add a fresh restricted key in Admin → Models & Keys."
+                    hint = " Gemini key rejected — it may be expired or an ephemeral token; add a fresh restricted key in Admin → Models & Keys."
+                failed_name = getattr(self.llm, "name", "?")
+                fallback = self._failover_provider(failed_name)
+                if fallback is not None:
+                    yield {"type": "warning",
+                           "message": f"{failed_name} unavailable ({err[:100]}) — failing over to {fallback.name} for this turn.{hint}"}
+                    self.llm = fallback
+                    stream = self.llm.stream(messages)
+                    continue
                 yield {"type": "warning", "message": f"Live model unavailable ({err[:120]}) — using fallback.{hint}"}
                 # the fallback's output flows through the SAME incremental
                 # ⟨CTRL⟩ parser below

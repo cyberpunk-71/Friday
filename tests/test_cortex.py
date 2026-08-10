@@ -375,3 +375,31 @@ def test_focus_one_shot_typo(cortex, db):
     s = f.active()
     assert s and s["target_min"] == 25
     assert "github" in (s["allow_domains"] or "")
+
+
+def test_failover_to_other_provider_on_401(cortex, db, monkeypatch):
+    """If the live LLM 401s mid-turn, cortex must fail over to the OTHER
+    provider (using a saved key) instead of dropping to the offline stub."""
+    from core.cortex import Cortex
+    from core.providers import DeepSeekProvider, SimSearch
+    db.exec("INSERT INTO provider_keys(provider,scope,api_key,active,source,created_ts,updated_ts)"
+            " VALUES('deepseek','default','sk-valid1234567890',1,'admin',?,?)", (1, 1))
+
+    class BoomGemini:
+        name = "gemini"
+        async def stream(self, messages, **kw):
+            raise RuntimeError("gemini 401: Request had invalid authentication credentials")
+            yield  # pragma: no cover — makes this an async generator (raise at __anext__)
+
+    c = Cortex(db, llm=BoomGemini(), search=SimSearch())
+
+    async def fake_stream(self, messages, **kw):
+        yield "I'm here on DeepSeek instead."
+
+    monkeypatch.setattr(DeepSeekProvider, "stream", fake_stream)
+    events = collect(c.turn("hello there"))
+    warns = [e for e in events if e["type"] == "warning"]
+    assert warns and "fail" in warns[0]["message"].lower()
+    done = next(e for e in events if e["type"] == "done")
+    assert done["model"] == "deepseek"
+    assert "DeepSeek instead" in done["reply"]
