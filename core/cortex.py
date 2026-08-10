@@ -555,24 +555,34 @@ class Cortex:
         stream = self.llm.stream(
             messages, temperature=cfg.get("speak.temperature", 0.6),
             max_tokens=cfg.get("speak.max_turn_tokens", 1200))
+        # a mid-turn failover sets this; the stale-error clear below must NOT
+        # wipe it (the admin panel should keep showing the broken provider)
+        self._turn_llm_error = False
         while True:
             try:
                 chunk = await stream.__anext__()
-                # first successful chunk from the LIVE provider clears any
-                # stale error record (so admin shows the truth)
-                if not prose_started and ctrl is None and self.llm.name == "deepseek":
+                # first successful chunk from the FIRST provider clears any
+                # stale error record (so admin shows the truth) — but never
+                # after a failover: that error is the reason the chat is slow
+                if (not self._turn_llm_error and not prose_started
+                        and ctrl is None and self.llm.name == "deepseek"):
                     self.db.set_setting("llm.last_error", None)
                     self.db.set_setting("llm.last_error_ts", None)
             except StopAsyncIteration:
                 break
-            except RuntimeError as e:
-                # network unavailable / bad key / provider error — record the
-                # REAL reason (visible in admin overview + this turn), then
-                # FAIL OVER to the other provider if a key exists for it
-                # (gemini↔deepseek), else degrade to the deterministic sim
+            except Exception as e:
+                # network unavailable / bad key / provider error / mid-stream
+                # connection drop (httpx.ReadError etc) — record the REAL
+                # reason (visible in admin overview + this turn), then FAIL
+                # OVER to the other provider if a key exists for it
+                # (gemini↔deepseek), else degrade to the deterministic sim.
+                # Catching Exception (not just RuntimeError) is deliberate:
+                # httpx.ReadError is NOT a RuntimeError and used to kill the
+                # whole turn silently after 'sense'.
                 err = str(e)[:300]
                 self.db.set_setting("llm.last_error", err)
                 self.db.set_setting("llm.last_error_ts", time.time())
+                self._turn_llm_error = True
                 hint = ""
                 if "401" in err and "gemini" in err:
                     hint = " Gemini key rejected — it may be expired or an ephemeral token; add a fresh restricted key in Admin → Models & Keys."

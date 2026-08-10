@@ -227,6 +227,7 @@ async function sendChat(text) {
     const dec = new TextDecoder();
     let buf = "";
     let done = false;
+    let gotDone = false;
     while (!done) {
       const { value, done: d } = await reader.read();
       done = d;
@@ -237,9 +238,16 @@ async function sendChat(text) {
         for (const line of chunk.split("\n")) {
           if (!line.startsWith("data:")) continue;
           let ev; try { ev = JSON.parse(line.slice(5)); } catch (e) { continue; }
+          if (ev.type === "done") gotDone = true;
           handleChatEvent(ev, typing);
         }
       }
+    }
+    // stream ended without a done event → server hiccuped mid-turn; never
+    // leave the typing bubble hanging
+    if (!gotDone) {
+      typing.remove();
+      addMsg("friday", `<p>⚠ The connection dropped mid-reply — say it again or try once more.</p>`);
     }
   } catch (e) {
     typing.remove();

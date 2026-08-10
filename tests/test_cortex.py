@@ -403,3 +403,33 @@ def test_failover_to_other_provider_on_401(cortex, db, monkeypatch):
     done = next(e for e in events if e["type"] == "done")
     assert done["model"] == "deepseek"
     assert "DeepSeek instead" in done["reply"]
+
+
+def test_failover_on_httpx_readexpress_non_runtime_error(cortex, db, monkeypatch):
+    """httpx.ReadError is NOT a RuntimeError — it used to escape the stream
+    loop and kill the whole turn after 'sense' (the exact bug on the VM).
+    Now ANY provider exception must fail over, not die."""
+    from core.cortex import Cortex
+    from core.providers import DeepSeekProvider, SimSearch
+    db.exec("INSERT INTO provider_keys(provider,scope,api_key,active,source,created_ts,updated_ts)"
+            " VALUES('deepseek','default','sk-valid1234567890',1,'admin',?,?)", (1, 1))
+
+    class ReadErrorGemini:
+        name = "gemini"
+        async def stream(self, messages, **kw):
+            import httpx
+            raise httpx.ReadError("connection closed by remote")
+            yield  # pragma: no cover
+
+    c = Cortex(db, llm=ReadErrorGemini(), search=SimSearch())
+
+    async def fake_stream(self, messages, **kw):
+        yield "Recovered via failover."
+
+    monkeypatch.setattr(DeepSeekProvider, "stream", fake_stream)
+    events = collect(c.turn("are you there"))
+    done = next(e for e in events if e["type"] == "done")
+    assert done["model"] == "deepseek"
+    assert "Recovered via failover" in done["reply"]
+    # the REAL reason is recorded for the admin overview
+    assert "connection closed" in (db.get_setting("llm.last_error") or "").lower()

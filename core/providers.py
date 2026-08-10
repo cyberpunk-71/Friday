@@ -100,8 +100,8 @@ class DeepSeekProvider(LLMProvider):
                     delta = obj.get("choices", [{}])[0].get("delta", {})
                     if "content" in delta and delta["content"]:
                         yield delta["content"]
-        except httpx.ConnectError as e:
-            raise RuntimeError(f"network unreachable for {self.name}: {e}") from e
+        except httpx.HTTPError as e:
+            raise RuntimeError(f"{self.name} network error: {type(e).__name__}: {e}") from e
 
     async def complete(self, messages: list[dict], json_mode: bool = False,
                        temperature: float = 0.6, max_tokens: int | None = None,
@@ -124,8 +124,8 @@ class DeepSeekProvider(LLMProvider):
                 raise RuntimeError(f"deepseek {resp.status_code}: {err}")
             obj = resp.json()
             return obj["choices"][0]["message"]["content"] or ""
-        except httpx.ConnectError as e:
-            raise RuntimeError(f"network unreachable for {self.name}: {e}") from e
+        except httpx.HTTPError as e:
+            raise RuntimeError(f"{self.name} network error: {type(e).__name__}: {e}") from e
 
     async def complete_tools(self, messages: list[dict], tools: list[dict],
                              temperature: float = 0.3, max_tokens: int = 600,
@@ -159,8 +159,8 @@ class DeepSeekProvider(LLMProvider):
                     "arguments": tc.get("function", {}).get("arguments", "{}"),
                 })
             return out
-        except httpx.ConnectError as e:
-            raise RuntimeError(f"network unreachable for {self.name}: {e}") from e
+        except httpx.HTTPError as e:
+            raise RuntimeError(f"{self.name} network error: {type(e).__name__}: {e}") from e
 
 
 # --------------------------------------------------------------------------- #
@@ -330,8 +330,8 @@ class GeminiProvider(LLMProvider):
                         last_err = err
                         continue
                     raise RuntimeError(f"gemini {resp.status_code}: {err}")
-                except httpx.ConnectError as e:
-                    raise RuntimeError(f"network unreachable for {self.name}: {e}") from e
+                except httpx.HTTPError as e:
+                    raise RuntimeError(f"{self.name} network error: {type(e).__name__}: {e}") from e
         raise RuntimeError(f"gemini: all auth methods failed — {last_err[:220]}")
 
     async def stream(self, messages: list[dict], json_mode: bool = False,
@@ -355,6 +355,11 @@ class GeminiProvider(LLMProvider):
                     for part in (cand.get("content", {}).get("parts", []) or []):
                         if part.get("text"):
                             yield part["text"]
+        except httpx.HTTPError as e:
+            # ReadError / ReadTimeout mid-stream (Google closes the connection
+            # on bad keys/models) must surface as RuntimeError so the cortex
+            # can fail over instead of dying silently
+            raise RuntimeError(f"{self.name} stream error: {type(e).__name__}: {e}") from e
         finally:
             await resp.aclose()
 
