@@ -134,13 +134,14 @@ class Hermes:
     @staticmethod
     def _listing_urls(city: str, is_movie: bool) -> list[str]:
         urls = [
-            f"https://in.bookmyshow.com/{city}/movies" if is_movie else f"https://in.bookmyshow.com/{city}/events",
-            f"https://www.bookmyshow.com/{city}/movies" if is_movie else f"https://www.bookmyshow.com/{city}/events",
+            f"https://in.bookmyshow.com/{city}" if is_movie else f"https://in.bookmyshow.com/{city}/events",
+            f"https://in.bookmyshow.com/{city}/movies" if is_movie else f"https://www.bookmyshow.com/{city}/events",
+            f"https://www.bookmyshow.com/{city}/movies" if is_movie else f"https://in.bookmyshow.com/{city}/events",
         ]
         if is_movie:
             urls += [f"https://in.bookmyshow.com/{city}/cinemas",
-                     "https://www.pvrcinemas.com/ahmedabad",
-                     "https://www.cinepolisindia.com/cinemas/ahmedabad"]
+                     f"https://www.paytm.com/movies/{city}",
+                     "https://www.pvrcinemas.com/ahmedabad"]
         return urls
 
     @staticmethod
